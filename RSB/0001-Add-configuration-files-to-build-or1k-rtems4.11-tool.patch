@@ -1,0 +1,136 @@
+From bcf4b8eea58127618d38380d73607683626a9242 Mon Sep 17 00:00:00 2001
+From: hesham <hesham@hesham-laptop.(none)>
+Date: Thu, 20 Mar 2014 09:43:13 +0200
+Subject: [PATCH] Add configuration files to build or1k-rtems4.11-* toolchain
+ from RSB
+
+---
+ rtems/config/4.11/rtems-or1k.bset                  |   25 +++++++++++
+ rtems/config/tools/rtems-binutils-2.24-or1k.cfg    |   30 +++++++++++++
+ .../tools/rtems-gcc-4.8.2-newlib-2.1.0-or1k.cfg    |   45 ++++++++++++++++++++
+ 3 files changed, 100 insertions(+)
+ create mode 100644 rtems/config/4.11/rtems-or1k.bset
+ create mode 100644 rtems/config/tools/rtems-binutils-2.24-or1k.cfg
+ create mode 100644 rtems/config/tools/rtems-gcc-4.8.2-newlib-2.1.0-or1k.cfg
+
+diff --git a/rtems/config/4.11/rtems-or1k.bset b/rtems/config/4.11/rtems-or1k.bset
+new file mode 100644
+index 0000000..8e9aa46
+--- /dev/null
++++ b/rtems/config/4.11/rtems-or1k.bset
+@@ -0,0 +1,25 @@
++#
++# Tools Set for RTEMS or1k 4.11 Stable
++#
++
++%define release 1
++
++%define rtems_arch or1k
++
++#
++# The RTEMS 4.11 BSP to build and test
++#
++%define rtems_bsps      all
++
++#
++# The RTEMS 4.11 base defines.
++#
++%include rtems-4.11-base.bset
++
++#
++# Tools configuration.
++#
++4.11/rtems-autotools
++devel/expat-2.1.0-1
++tools/rtems-binutils-2.24-or1k
++tools/rtems-gcc-4.8.2-newlib-2.1.0-or1k
+diff --git a/rtems/config/tools/rtems-binutils-2.24-or1k.cfg b/rtems/config/tools/rtems-binutils-2.24-or1k.cfg
+new file mode 100644
+index 0000000..eed2851
+--- /dev/null
++++ b/rtems/config/tools/rtems-binutils-2.24-or1k.cfg
+@@ -0,0 +1,30 @@
++#
++# Binutils 2.24.
++#
++
++%include %{_configdir}/checks.cfg
++%include %{_configdir}/base.cfg
++
++%define binutils_version 2.24
++
++#
++# Enable deterministic archives by default. This will be the default
++# there all tools using this binutils will create deterministic
++# archives.
++#
++%define with_deterministic_archives 1
++
++#
++# or1k patches
++#
++%define rtems_binutils_patch1 https://raw.githubusercontent.com/heshamelmatary/or1k-rtems/master/patches/binutils-2.24-or1k-rtems.diff
++
++#
++# Include the RTEMS specific patches
++#
++%include rtems-binutils-patches.cfg
++
++#
++# The binutils build instructions. We use 2.xx Release 1.
++#
++%include %{_configdir}/binutils-2-1.cfg
+diff --git a/rtems/config/tools/rtems-gcc-4.8.2-newlib-2.1.0-or1k.cfg b/rtems/config/tools/rtems-gcc-4.8.2-newlib-2.1.0-or1k.cfg
+new file mode 100644
+index 0000000..55f2a45
+--- /dev/null
++++ b/rtems/config/tools/rtems-gcc-4.8.2-newlib-2.1.0-or1k.cfg
+@@ -0,0 +1,45 @@
++#
++# GCC 4.8.2., Newlib-2.1.0 
++#
++
++%include %{_configdir}/checks.cfg
++%include %{_configdir}/base.cfg
++%include %{_configdir}/versions.cfg
++
++%define newlib_version 2.1.0 
++%define gcc_version    4.8.2
++%define mpfr_version   3.0.1
++%define mpc_version    0.8.2
++%define gmp_version    5.0.5
++
++%define with_threads 0
++%define with_plugin  0
++
++%ifn %{defined with_iconv}
++%define with_iconv 1
++%endif
++
++#
++# Chris's patch to use the POSIX thread model for C++.
++#
++%define rtems_gcc_patch2 %{rtems_gcc_patches}/gcc-rtems-thread-model-posix-1.diff
++
++#
++# or1k patch for gcc-4.8.2
++#
++%define rtems_gcc_patch3 https://raw.githubusercontent.com/heshamelmatary/or1k-rtems/master/patches/gcc-4.8.2-or1k-rtems.diff 
++
++#
++# newlib-2.1.0 or1k patch
++#
++%define rtems_gcc_patch11 https://raw.githubusercontent.com/heshamelmatary/or1k-rtems/master/patches/newlib-2.1.0-or1k-rtems.diff 
++%define rtems_gcc_patch11_opts -p1
++
++#
++# Manage RTEMS patches
++#
++%include rtems-gcc-patches.cfg
++
++# The gcc/newlib build instructions. We use 4.8 Release 1.
++#
++%include %{_configdir}/gcc-4.8-1.cfg
+-- 
+1.7.9.5
+

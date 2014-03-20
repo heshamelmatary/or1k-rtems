@@ -1,0 +1,2 @@
+The current patches include both or1k changes to sourcware (gcc, binutils) and
+newlib as well as changes to make building or1k-rtems4.11-* possible.

@@ -36,8 +36,7 @@ setjmp:
   l.sw  116(r3),r30
   l.sw  120(r3),r31
   /* Save Status Register */
-  l.addi  r13,r0,17  
-  l.mfspr  r13,r13
+  l.mfspr  r13,r0,17
   l.sw    124(r3), r13
   /* Set result register to 0 and jump */
   l.addi r11,r0,0
@@ -52,16 +51,16 @@ longjmp:
 
   /* If the second argument to longjmp is zero, set return address to 1,
   otherwise set it to the value of the second argument */
-  l.addi  r11,1
+  l.addi  r11,r0,1
   l.sfne  r4,r0
-  l.jf    1f
+  l.bf    1f
   l.nop
   l.addi  r11,r4,0
 
   /* Load status register */
-  l.addi  r13,r0,17
-  l.lwz   124(r3),r15
-  l.mtspr r13, r15
+1: 
+  l.lwz   r15,124(r3)
+  l.mtspr r0,r15,17
 
   l.lwz  r1,4(r3)
   l.lwz  r2,8(r3)

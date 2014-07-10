@@ -1,4 +1,61 @@
-diff -x '*CVS*' -x configure -x Makefile.in -Naur src/newlib/libc/machine/configure.in newlib-vanilla/newlib/libc/machine/configure.in
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/configure.host newlib-vanilla/newlib/configure.host
+--- src/newlib/configure.host	2014-06-10 05:09:35.000000000 +0200
++++ newlib-vanilla/newlib/configure.host	2014-07-10 03:16:18.067459172 +0200
+@@ -244,9 +244,8 @@
+   nios2*)
+ 	machine_dir=nios2
+ 	;;
+-  or16)
+-	;;
+-  or32)
++  or1k*)
++	machine_dir=or1k
+ 	;;
+   powerpc*)
+ 	machine_dir=powerpc
+@@ -502,6 +501,9 @@
+   nios2*)
+ 	sys_dir=
+ 	;;
++  or1k-*-* | or1knd-*-*)
++        syscall_dir=syscalls
++	;;
+   powerpcle-*-pe)
+ 	posix_dir=posix
+ 	;;
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/include/machine/ieeefp.h newlib-vanilla/newlib/libc/include/machine/ieeefp.h
+--- src/newlib/libc/include/machine/ieeefp.h	2014-05-14 13:33:24.000000000 +0200
++++ newlib-vanilla/newlib/libc/include/machine/ieeefp.h	2014-07-10 03:16:19.005473429 +0200
+@@ -316,7 +316,7 @@
+ #define _DOUBLE_IS_32BITS
+ #endif
+ 
+-#if defined(__or32__) || defined(__or1k__) || defined(__or16__)
++#if defined(__or32__) || defined(__or1k__) || defined(__or16__) || defined(__OR1K__) || defined(__OR1KND__)
+ #define __IEEE_BIG_ENDIAN
+ #endif
+ 
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/include/machine/setjmp.h newlib-vanilla/newlib/libc/include/machine/setjmp.h
+--- src/newlib/libc/include/machine/setjmp.h	2013-11-26 21:58:19.000000000 +0200
++++ newlib-vanilla/newlib/libc/include/machine/setjmp.h	2014-07-10 01:53:18.745494865 +0200
+@@ -1,6 +1,16 @@
+ 
+ _BEGIN_STD_C
+ 
++#ifdef __or1k__
++#define _JBLEN 31 /* 32 GPRs - r0 */
++#define _JBTYPE unsigned long
++#endif
++
++#ifdef __or32__
++#define _JBLEN 31 /* 32 GPRs - r0 */
++#define _JBTYPE unsigned long
++#endif
++
+ #if defined(__arm__) || defined(__thumb__)
+ /*
+  * All callee preserved registers:
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/machine/configure.in newlib-vanilla/newlib/libc/machine/configure.in
 --- src/newlib/libc/machine/configure.in	2013-07-09 21:06:47.000000000 +0200
 +++ newlib-vanilla/newlib/libc/machine/configure.in	2014-07-10 01:53:18.768495265 +0200
 @@ -58,6 +58,7 @@
@@ -9,7 +66,7 @@ diff -x '*CVS*' -x configure -x Makefile.in -Naur src/newlib/libc/machine/config
  	powerpc) AC_CONFIG_SUBDIRS(powerpc) ;;
  	rl78) AC_CONFIG_SUBDIRS(rl78) ;;
  	rx) AC_CONFIG_SUBDIRS(rx) ;;
-diff -x '*CVS*' -x configure -x Makefile.in -Naur src/newlib/libc/machine/or1k/configure.in newlib-vanilla/newlib/libc/machine/or1k/configure.in
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/machine/or1k/configure.in newlib-vanilla/newlib/libc/machine/or1k/configure.in
 --- src/newlib/libc/machine/or1k/configure.in	1970-01-01 02:00:00.000000000 +0200
 +++ newlib-vanilla/newlib/libc/machine/or1k/configure.in	2014-07-10 01:53:18.773495353 +0200
 @@ -0,0 +1,14 @@
@@ -27,7 +84,7 @@ diff -x '*CVS*' -x configure -x Makefile.in -Naur src/newlib/libc/machine/or1k/c
 +
 +AC_CONFIG_FILES([Makefile])
 +AC_OUTPUT
-diff -x '*CVS*' -x configure -x Makefile.in -Naur src/newlib/libc/machine/or1k/Makefile.am newlib-vanilla/newlib/libc/machine/or1k/Makefile.am
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/machine/or1k/Makefile.am newlib-vanilla/newlib/libc/machine/or1k/Makefile.am
 --- src/newlib/libc/machine/or1k/Makefile.am	1970-01-01 02:00:00.000000000 +0200
 +++ newlib-vanilla/newlib/libc/machine/or1k/Makefile.am	2014-07-10 01:53:18.773495353 +0200
 @@ -0,0 +1,16 @@
@@ -47,7 +104,7 @@ diff -x '*CVS*' -x configure -x Makefile.in -Naur src/newlib/libc/machine/or1k/M
 +
 +ACLOCAL_AMFLAGS = -I ../../.. -I ../../../..
 +CONFIG_STATUS_DEPENDENCIES = $(newlib_basedir)/configure.host
-diff -x '*CVS*' -x configure -x Makefile.in -Naur src/newlib/libc/machine/or1k/setjmp.S newlib-vanilla/newlib/libc/machine/or1k/setjmp.S
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/machine/or1k/setjmp.S newlib-vanilla/newlib/libc/machine/or1k/setjmp.S
 --- src/newlib/libc/machine/or1k/setjmp.S	1970-01-01 02:00:00.000000000 +0200
 +++ newlib-vanilla/newlib/libc/machine/or1k/setjmp.S	2014-07-11 01:32:19.865090401 +0200
 @@ -0,0 +1,100 @@

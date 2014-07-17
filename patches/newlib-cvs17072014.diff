@@ -1,0 +1,221 @@
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/ChangeLog newlib-vanilla/newlib/ChangeLog
+--- src/newlib/ChangeLog	2014-07-07 15:58:33.000000000 +0200
++++ newlib-vanilla/newlib/ChangeLog	2014-07-17 05:11:02.905980676 +0200
+@@ -1,3 +1,12 @@
++2014-07-17  Hesham ALMatary <heshamelmatary@gmail.com>
++
++	* configure.host: Remove or16 and or32 targets and add or1k.
++	* libc/include/machine/ieeefp.h: Replace or32 with or1k.
++	* libc/machine/configure.in: Add or1k subdirectory.
++	* libc/machine/or1k/configure.in: New file.
++	* libc/machine/or1k/Makefile.am: New file.
++	* libc/machine/or1k/setjmp.S: New file.
++
+ 2014-07-07  Pavel Pisa  <pisa@cmp.felk.cvut.cz>
+ 	    Richard Earnshaw  <rearnsha@arm.com>
+ 
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/configure.host newlib-vanilla/newlib/configure.host
+--- src/newlib/configure.host	2014-06-10 05:09:35.000000000 +0200
++++ newlib-vanilla/newlib/configure.host	2014-07-10 03:16:18.067459172 +0200
+@@ -244,9 +244,8 @@
+   nios2*)
+ 	machine_dir=nios2
+ 	;;
+-  or16)
+-	;;
+-  or32)
++  or1k*)
++	machine_dir=or1k
+ 	;;
+   powerpc*)
+ 	machine_dir=powerpc
+@@ -502,6 +501,9 @@
+   nios2*)
+ 	sys_dir=
+ 	;;
++  or1k-*-* | or1knd-*-*)
++        syscall_dir=syscalls
++	;;
+   powerpcle-*-pe)
+ 	posix_dir=posix
+ 	;;
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/include/machine/ieeefp.h newlib-vanilla/newlib/libc/include/machine/ieeefp.h
+--- src/newlib/libc/include/machine/ieeefp.h	2014-05-14 13:33:24.000000000 +0200
++++ newlib-vanilla/newlib/libc/include/machine/ieeefp.h	2014-07-11 22:47:18.836803755 +0200
+@@ -316,7 +316,7 @@
+ #define _DOUBLE_IS_32BITS
+ #endif
+ 
+-#if defined(__or32__) || defined(__or1k__) || defined(__or16__)
++#if defined(__or1k__) || defined(__OR1K__) || defined(__OR1KND__)
+ #define __IEEE_BIG_ENDIAN
+ #endif
+ 
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/include/machine/setjmp.h newlib-vanilla/newlib/libc/include/machine/setjmp.h
+--- src/newlib/libc/include/machine/setjmp.h	2013-11-26 21:58:19.000000000 +0200
++++ newlib-vanilla/newlib/libc/include/machine/setjmp.h	2014-07-11 22:47:38.729173227 +0200
+@@ -1,6 +1,11 @@
+ 
+ _BEGIN_STD_C
+ 
++#ifdef __or1k__
++#define _JBLEN 31 /* 32 GPRs - r0 */
++#define _JBTYPE unsigned long
++#endif
++
+ #if defined(__arm__) || defined(__thumb__)
+ /*
+  * All callee preserved registers:
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/machine/configure.in newlib-vanilla/newlib/libc/machine/configure.in
+--- src/newlib/libc/machine/configure.in	2013-07-09 21:06:47.000000000 +0200
++++ newlib-vanilla/newlib/libc/machine/configure.in	2014-07-10 01:53:18.768495265 +0200
+@@ -58,6 +58,7 @@
+ 	nds32) AC_CONFIG_SUBDIRS(nds32) ;;
+ 	necv70) AC_CONFIG_SUBDIRS(necv70) ;;
+ 	nios2) AC_CONFIG_SUBDIRS(nios2) ;;
++	or1k) AC_CONFIG_SUBDIRS(or1k) ;;
+ 	powerpc) AC_CONFIG_SUBDIRS(powerpc) ;;
+ 	rl78) AC_CONFIG_SUBDIRS(rl78) ;;
+ 	rx) AC_CONFIG_SUBDIRS(rx) ;;
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/machine/or1k/configure.in newlib-vanilla/newlib/libc/machine/or1k/configure.in
+--- src/newlib/libc/machine/or1k/configure.in	1970-01-01 02:00:00.000000000 +0200
++++ newlib-vanilla/newlib/libc/machine/or1k/configure.in	2014-07-10 01:53:18.773495353 +0200
+@@ -0,0 +1,14 @@
++dnl This is the newlib/libc/machine/or1k configure.in file.
++dnl Process this file with autoconf to produce a configure script.
++
++AC_PREREQ(2.59)
++AC_INIT([newlib],[NEWLIB_VERSION])
++AC_CONFIG_SRCDIR([Makefile.am])
++
++dnl Can't be done in NEWLIB_CONFIGURE because that confuses automake. 
++AC_CONFIG_AUX_DIR(../../../..)
++
++NEWLIB_CONFIGURE(../../..)
++
++AC_CONFIG_FILES([Makefile])
++AC_OUTPUT
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/machine/or1k/Makefile.am newlib-vanilla/newlib/libc/machine/or1k/Makefile.am
+--- src/newlib/libc/machine/or1k/Makefile.am	1970-01-01 02:00:00.000000000 +0200
++++ newlib-vanilla/newlib/libc/machine/or1k/Makefile.am	2014-07-10 01:53:18.773495353 +0200
+@@ -0,0 +1,16 @@
++## Process this file with automake to generate Makefile.in
++
++AUTOMAKE_OPTIONS = cygnus
++
++INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
++
++AM_CCASFLAGS = $(INCLUDES)
++
++noinst_LIBRARIES = lib.a
++
++lib_a_SOURCES = setjmp.S
++lib_a_CCASFLAGS=$(AM_CCASFLAGS)
++lib_a_CFLAGS=$(AM_CFLAGS)
++
++ACLOCAL_AMFLAGS = -I ../../.. -I ../../../..
++CONFIG_STATUS_DEPENDENCIES = $(newlib_basedir)/configure.host
+diff -x '*CVS*' -x configure -x Makefile.in -x '*.#*.h*' -Naur src/newlib/libc/machine/or1k/setjmp.S newlib-vanilla/newlib/libc/machine/or1k/setjmp.S
+--- src/newlib/libc/machine/or1k/setjmp.S	1970-01-01 02:00:00.000000000 +0200
++++ newlib-vanilla/newlib/libc/machine/or1k/setjmp.S	2014-07-11 01:32:19.865090401 +0200
+@@ -0,0 +1,100 @@
++/*
++Copyright (c) 2014, Hesham ALMatary
++All rights reserved.
++
++Redistribution and use in source and binary forms, with or without modification,
++are permitted provided that the following conditions are met:
++
++1. Redistributions of source code must retain the above copyright notice, this
++list of conditions and the following disclaimer.
++
++2. Redistributions in binary form must reproduce the above copyright notice,
++this list of conditions and the following disclaimer in the documentation and/or
++other materials provided with the distribution.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
++ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
++WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
++ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
++(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
++LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
++ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
++SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++*/
++
++.align  4
++.global setjmp
++.type   setjmp,@function
++setjmp:
++
++	l.sw	4(r3), r1
++	l.sw	8(r3), r2
++	l.sw	12(r3), r3
++	l.sw	16(r3), r4
++	l.sw	20(r3), r5
++	l.sw	24(r3), r6
++	l.sw	28(r3), r7
++	l.sw	32(r3), r8
++	l.sw	36(r3), r9
++	/* Skip r10 as it's preserved to be used by TLS */ 
++	/* Skip r11, setjmp always set it to 0 */
++	/* The following set if registers are preserved across function calls */
++	l.sw	52(r3), r14
++	l.sw	60(r3), r16
++	l.sw	68(r3), r18
++	l.sw	76(r3), r20
++	l.sw	84(r3), r22
++	l.sw	92(r3), r24
++	l.sw	100(r3), r26
++	l.sw	108(r3), r28
++	l.sw	116(r3), r30
++	/* Save Status Register */
++	l.mfspr	r13, r0, 17
++	l.sw	124(r3), r13
++/* Set result register to 0 and jump */
++	l.jr	r9
++	l.addi	r11, r0, 0
++
++.align  4
++.global longjmp
++.type   longjmp,@function
++longjmp:
++
++  /* If the second argument to longjmp is zero, set return address to 1,
++  otherwise set it to the value of the second argument */
++	l.addi	r11, r0, 1
++	l.sfne	r4, r0
++	l.bf	1f
++	l.nop
++	l.addi	r11, r4, 0
++
++  /* Load status register */
++1: 
++	l.lwz	r15, 124(r3)
++	l.mtspr	r0, r15, 17
++
++	l.lwz	r1, 4(r3)
++	l.lwz	r2, 8(r3)
++	/* Skip r3 as it contains the current buffer address */
++	l.lwz	r4, 16(r3)
++	l.lwz	r5, 20(r3)
++	l.lwz	r6, 24(r3)
++	l.lwz	r7, 28(r3)
++	l.lwz	r8, 32(r3)
++	l.lwz	r9, 36(r3)
++	/* Skip r11 as it's always set by longjmp */
++	l.lwz	r14, 52(r3)
++	l.lwz	r16, 60(r3)
++	l.lwz	r18, 68(r3)
++	l.lwz	r20, 76(r3)
++	l.lwz	r22, 84(r3)
++	l.lwz	r24, 92(r3)
++	l.lwz	r26, 100(r3)
++	l.lwz	r28, 108(r3)
++	l.lwz	r30, 116(r3)
++	l.lwz	r3, 12(r3)
++
++	l.jr	r9
++	l.nop

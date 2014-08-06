@@ -1127,8 +1127,8 @@ diff -r -x '*.out' -x '*~' -x '*.m4' -x '*autom4te*' -x '*.in' -x configure -x p
 +/* end of file */
 diff -r -x '*.out' -x '*~' -x '*.m4' -x '*autom4te*' -x '*.in' -x configure -x preinstall.am -x patch -Naur rtems-github/cpukit/score/cpu/or1k/rtems/score/cpu.h rtems-gsoc2014/rtems/cpukit/score/cpu/or1k/rtems/score/cpu.h
 --- rtems-github/cpukit/score/cpu/or1k/rtems/score/cpu.h	1970-01-01 02:00:00.000000000 +0200
-+++ rtems-gsoc2014/rtems/cpukit/score/cpu/or1k/rtems/score/cpu.h	2014-08-06 12:46:04.714244323 +0200
-@@ -0,0 +1,1056 @@
++++ rtems-gsoc2014/rtems/cpukit/score/cpu/or1k/rtems/score/cpu.h	2014-08-06 17:33:19.837035237 +0200
+@@ -0,0 +1,1053 @@
 +/**
 + * @file rtems/score/cpu.h
 + */
@@ -1680,10 +1680,7 @@ diff -r -x '*.out' -x '*~' -x '*.m4' -x '*autom4te*' -x '*.in' -x configure -x p
 +  
 +  sr = _OR1K_mfspr(CPU_OR1K_SR);
 +  
-+  /* Mask interrupts is SR register */
-+  sr &= CPU_OR1K_ISR_STATUS_MASK_I_DIS;
-+  
-+  _OR1K_mtspr(CPU_OR1K_SR, sr);
++  _OR1K_mtspr(CPU_OR1K_SR, (sr & CPU_OR1K_ISR_STATUS_MASK_I_DIS));
 +  
 +  return sr;
 +}

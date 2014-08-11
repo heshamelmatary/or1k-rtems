@@ -1,0 +1,2558 @@
+From 9d4b5ab113983dc55fcae7ac670ebbd93d7cc9d4 Mon Sep 17 00:00:00 2001
+From: Hesham ALMatary <heshamelmatary@gmail.com>
+Date: Sun, 10 Aug 2014 22:29:35 +0200
+Subject: [PATCH] Add support for OpenRISC architecture.
+
+This work is based on the old or32 port (that has been removed back in 2005)
+authored by Chris Ziomkowski. The patch includes the basic functions every
+port should implement like: context switch, exception handling,
+OpenRISC ABI and machine definitions and configurations.
+---
+ cpukit/configure.ac                                |    1 +
+ cpukit/score/cpu/Makefile.am                       |    1 +
+ cpukit/score/cpu/or1k/Makefile.am                  |   36 +
+ cpukit/score/cpu/or1k/asm.h                        |  104 ++
+ cpukit/score/cpu/or1k/cpu.c                        |  120 +++
+ cpukit/score/cpu/or1k/or1k-context-initialize.c    |   43 +
+ cpukit/score/cpu/or1k/or1k-context-switch.S        |  115 +++
+ cpukit/score/cpu/or1k/or1k-exception-default.c     |   24 +
+ cpukit/score/cpu/or1k/or1k-exception-frame-print.c |   22 +
+ cpukit/score/cpu/or1k/or1k-exception-handler-low.S |  285 ++++++
+ cpukit/score/cpu/or1k/rtems/asm.h                  |   99 ++
+ cpukit/score/cpu/or1k/rtems/score/cpu.h            | 1049 ++++++++++++++++++++
+ cpukit/score/cpu/or1k/rtems/score/cpu_asm.h        |   74 ++
+ cpukit/score/cpu/or1k/rtems/score/or1k-utility.h   |  334 +++++++
+ cpukit/score/cpu/or1k/rtems/score/or1k.h           |   49 +
+ cpukit/score/cpu/or1k/rtems/score/types.h          |   51 +
+ 16 files changed, 2407 insertions(+)
+ create mode 100644 cpukit/score/cpu/or1k/Makefile.am
+ create mode 100644 cpukit/score/cpu/or1k/asm.h
+ create mode 100644 cpukit/score/cpu/or1k/cpu.c
+ create mode 100644 cpukit/score/cpu/or1k/or1k-context-initialize.c
+ create mode 100644 cpukit/score/cpu/or1k/or1k-context-switch.S
+ create mode 100644 cpukit/score/cpu/or1k/or1k-exception-default.c
+ create mode 100644 cpukit/score/cpu/or1k/or1k-exception-frame-print.c
+ create mode 100644 cpukit/score/cpu/or1k/or1k-exception-handler-low.S
+ create mode 100644 cpukit/score/cpu/or1k/rtems/asm.h
+ create mode 100644 cpukit/score/cpu/or1k/rtems/score/cpu.h
+ create mode 100644 cpukit/score/cpu/or1k/rtems/score/cpu_asm.h
+ create mode 100644 cpukit/score/cpu/or1k/rtems/score/or1k-utility.h
+ create mode 100644 cpukit/score/cpu/or1k/rtems/score/or1k.h
+ create mode 100644 cpukit/score/cpu/or1k/rtems/score/types.h
+
+diff --git a/cpukit/configure.ac b/cpukit/configure.ac
+index 19e5b81..56815e2 100644
+--- a/cpukit/configure.ac
++++ b/cpukit/configure.ac
+@@ -382,6 +382,7 @@ score/cpu/m32r/Makefile
+ score/cpu/mips/Makefile
+ score/cpu/moxie/Makefile
+ score/cpu/nios2/Makefile
++score/cpu/or1k/Makefile
+ score/cpu/powerpc/Makefile
+ score/cpu/sh/Makefile
+ score/cpu/sparc/Makefile
+diff --git a/cpukit/score/cpu/Makefile.am b/cpukit/score/cpu/Makefile.am
+index 8d28fc2..69abcd6 100644
+--- a/cpukit/score/cpu/Makefile.am
++++ b/cpukit/score/cpu/Makefile.am
+@@ -14,6 +14,7 @@ DIST_SUBDIRS += mips
+ DIST_SUBDIRS += moxie
+ DIST_SUBDIRS += nios2
+ DIST_SUBDIRS += no_cpu
++DIST_SUBDIRS += or1k
+ DIST_SUBDIRS += powerpc
+ DIST_SUBDIRS += sh
+ DIST_SUBDIRS += sparc
+diff --git a/cpukit/score/cpu/or1k/Makefile.am b/cpukit/score/cpu/or1k/Makefile.am
+new file mode 100644
+index 0000000..b3a8ade
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/Makefile.am
+@@ -0,0 +1,36 @@
++include $(top_srcdir)/automake/compile.am
++
++CLEANFILES =
++DISTCLEANFILES =
++
++include_rtemsdir = $(includedir)/rtems
++
++include_rtems_HEADERS = rtems/asm.h
++
++include_rtems_scoredir = $(includedir)/rtems/score
++
++include_rtems_score_HEADERS =
++include_rtems_score_HEADERS += rtems/score/cpu.h
++include_rtems_score_HEADERS += rtems/score/cpu_asm.h
++include_rtems_score_HEADERS += rtems/score/types.h 
++include_rtems_score_HEADERS += rtems/score/or1k.h
++include_rtems_score_HEADERS += rtems/score/or1k-utility.h 
++
++
++
++noinst_LIBRARIES = libscorecpu.a
++
++libscorecpu_a_SOURCES = 
++libscorecpu_a_SOURCES += cpu.c
++libscorecpu_a_SOURCES += or1k-context-switch.S
++libscorecpu_a_SOURCES += or1k-context-initialize.c
++libscorecpu_a_SOURCES += or1k-exception-default.c
++libscorecpu_a_SOURCES += or1k-exception-frame-print.c
++libscorecpu_a_SOURCES += or1k-exception-handler-low.S
++
++libscorecpu_a_CPPFLAGS = $(AM_CPPFLAGS)
++
++all-local: $(PREINSTALL_FILES)
++
++include $(srcdir)/preinstall.am
++include $(top_srcdir)/automake/local.am
+diff --git a/cpukit/score/cpu/or1k/asm.h b/cpukit/score/cpu/or1k/asm.h
+new file mode 100644
+index 0000000..19c006d
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/asm.h
+@@ -0,0 +1,104 @@
++/**
++ * @file
++ * 
++ * @brief Address the Problems Caused by Incompatible Flavor of 
++ * Assemblers and Toolsets
++ *
++ * This include file attempts to address the problems
++ * caused by incompatible flavors of assemblers and
++ * toolsets.  It primarily addresses variations in the
++ * use of leading underscores on symbols and the requirement
++ * that register names be preceded by a %.
++ * 
++ * NOTE: The spacing in the use of these macros
++ *       is critical to them working as advertised.
++ */
++
++/*
++ *  COPYRIGHT:
++ *
++ *  This file is based on similar code found in newlib available
++ *  from ftp.cygnus.com.  The file which was used had no copyright
++ *  notice.  This file is freely distributable as long as the source
++ *  of the file is noted.  This file is:
++ *
++ *  COPYRIGHT (c) 1994-1997.
++ *  On-Line Applications Research Corporation (OAR).
++ */
++
++#ifndef _RTEMS_ASM_H
++#define _RTEMS_ASM_H
++
++/*
++ *  Indicate we are in an assembly file and get the basic CPU definitions.
++ */
++
++#ifndef ASM
++#define ASM
++#endif
++
++#include <rtems/score/cpuopts.h>
++#include <rtems/score/cpu.h>
++
++/*
++ *  Recent versions of GNU cpp define variables which indicate the
++ *  need for underscores and percents.  If not using GNU cpp or
++ *  the version does not support this, then you will obviously
++ *  have to define these as appropriate.
++ */
++
++#ifndef __USER_LABEL_PREFIX__
++#define __USER_LABEL_PREFIX__ _
++#endif
++
++#ifndef __REGISTER_PREFIX__
++#define __REGISTER_PREFIX__
++#endif
++
++#include <rtems/concat.h>
++
++#define SYM(x) CONCAT0 (__USER_LABEL_PREFIX__, x)
++
++/* Use the right prefix for registers.  */
++
++#define REG(x) CONCAT0 (__REGISTER_PREFIX__, x)
++
++/* Use the right prefix for global labels.  */
++
++#define SYM(x) CONCAT1 (__USER_LABEL_PREFIX__, x)
++
++/* Use the right prefix for registers.  */
++
++#define REG(x) CONCAT1 (__REGISTER_PREFIX__, x)
++
++/*
++ *  define macros for all of the registers on this CPU
++ *
++ *  EXAMPLE:     #define d0 REG (d0)
++ */
++
++/*
++ *  Define macros to handle section beginning and ends.
++ */
++
++#define BEGIN_CODE_DCL .text
++#define END_CODE_DCL
++#define BEGIN_DATA_DCL .data
++#define END_DATA_DCL
++#define BEGIN_CODE .text
++#define END_CODE
++#define BEGIN_DATA
++#define END_DATA
++#define BEGIN_BSS
++#define END_BSS
++#define END
++
++/*
++ *  Following must be tailor for a particular flavor of the C compiler.
++ *  They may need to put underscores in front of the symbols.
++ */
++
++#define PUBLIC(sym) .global SYM (sym)
++#define EXTERN(sym) .global SYM (sym)
++
++#endif
+diff --git a/cpukit/score/cpu/or1k/cpu.c b/cpukit/score/cpu/or1k/cpu.c
+new file mode 100644
+index 0000000..05e4cd9
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/cpu.c
+@@ -0,0 +1,120 @@
++/*
++ *  Opencore OR1K CPU Dependent Source
++ *
++ *  COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *  COPYRIGHT (c) 1989-1999.
++ *  On-Line Applications Research Corporation (OAR).
++ *
++ *  The license and distribution terms for this file may be
++ *  found in the file LICENSE in this distribution or at
++ *  http://www.rtems.com/license/LICENSE.
++ *
++ */
++
++#include <rtems/system.h>
++#include <rtems/score/isr.h>
++#include <rtems/score/wkspace.h>
++#include <bsp/linker-symbols.h>
++
++/**
++ * @brief Performs processor dependent initialization.
++ */
++void _CPU_Initialize(void)
++{
++  /* Do nothing */
++}
++
++/**
++ * @brief Sets the hardware interrupt level by the level value.
++ *
++ * @param[in] level for or1k can only range over two values: 
++ * 0 (enable interrupts) and 1 (disable interrupts). In future 
++ * implementations if fast context switch is implemented, the level 
++ * can range from 0 to 15. @see OpenRISC architecture manual.
++ *
++ */
++inline void _CPU_ISR_Set_level(uint32_t level)
++{
++  uint32_t sr = 0;
++  level = (level > 0)? 1 : 0;
++  
++  /* map level bit to or1k interrupt enable/disable bit in sr register */
++  level <<= CPU_OR1K_SPR_SR_SHAMT_IEE;
++  
++  sr = _OR1K_mfspr(CPU_OR1K_SPR_SR);
++  
++  if (level == 0) /* Enable all interrupts */
++  {
++    sr |= CPU_OR1K_SPR_SR_IEE | CPU_OR1K_SPR_SR_TEE;
++  }
++  else
++  {
++    sr &= CPU_OR1K_ISR_STATUS_MASK_I_DIS;
++  } 
++  
++  _OR1K_mtspr(CPU_OR1K_SPR_SR, sr);
++ } 
++ 
++uint32_t  _CPU_ISR_Get_level( void )
++{
++  uint32_t sr = 0;
++  
++  sr = _OR1K_mfspr(CPU_OR1K_SPR_SR);
++  
++  return (sr & CPU_OR1K_SPR_SR_IEE)? 0 : 1;
++}
++ 
++void _CPU_ISR_install_raw_handler(
++  uint32_t   vector,
++  proc_ptr    new_handler,
++  proc_ptr   *old_handler
++)
++{
++
++}
++
++void _CPU_ISR_install_vector(
++  uint32_t    vector,
++  proc_ptr    new_handler,
++  proc_ptr   *old_handler
++)
++{
++   volatile proc_ptr *table = 
++     (proc_ptr *) bsp_start_vector_table_begin;
++   proc_ptr current_handler;
++   
++   ISR_Level level;
++
++  _ISR_Disable( level );
++  
++  current_handler = table [vector];
++  
++  /* The current handler is now the old one */
++  if (old_handler != NULL) {
++    *old_handler = (proc_ptr) current_handler;
++  }
++
++  /* Write only if necessary to avoid writes to a maybe read-only memory */
++  if (current_handler != (uint32_t) new_handler) {
++    table [vector] = (uint32_t) new_handler;
++  }
++    
++   _ISR_Enable( level );
++}
++
++void _CPU_Install_interrupt_stack( void )
++{
++}
++
++void _CPU_Context_Initialize_fp(
++  void **fp_context_ptr
++)
++{
++}
++
++void _CPU_Thread_Idle_body( void )
++{
++
++  for( ; ; );
++    /* insert your "halt" instruction here */
++}
+diff --git a/cpukit/score/cpu/or1k/or1k-context-initialize.c b/cpukit/score/cpu/or1k/or1k-context-initialize.c
+new file mode 100644
+index 0000000..aed0618
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/or1k-context-initialize.c
+@@ -0,0 +1,43 @@
++/*
++ * COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *
++ * COPYRIGHT (c) 1989-2006
++ * On-Line Applications Research Corporation (OAR).
++ *
++ * The license and distribution terms for this file may be
++ * found in the file LICENSE in this distribution or at
++ * http://www.rtems.org/license/LICENSE.
++ */
++
++#ifdef HAVE_CONFIG_H
++  #include "config.h"
++#endif
++
++#include <string.h>
++
++#include <rtems/score/cpu.h>
++#include <rtems/score/interr.h>
++#include <rtems/score/or1k-utility.h>
++
++void _CPU_Context_Initialize(
++  Context_Control *context,
++  void *stack_area_begin,
++  size_t stack_area_size,
++  uint32_t new_level,
++  void (*entry_point)( void ),
++  bool is_fp,
++  void *tls_area
++)
++{
++  uint32_t stack = (uint32_t) stack_area_begin;
++  uint32_t sr;
++  
++  sr = _OR1K_mfspr(CPU_OR1K_SPR_SR);
++  
++  memset(context, 0, sizeof(*context));
++  
++  context->r1 = stack;
++  context->r2 = stack;
++  context->r9 = (uint32_t) entry_point;
++  context->sr = sr;
++}
+diff --git a/cpukit/score/cpu/or1k/or1k-context-switch.S b/cpukit/score/cpu/or1k/or1k-context-switch.S
+new file mode 100644
+index 0000000..fa24c93
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/or1k-context-switch.S
+@@ -0,0 +1,115 @@
++/*
++ * COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *
++ * The license and distribution terms for this file may be
++ * found in the file LICENSE in this distribution or at
++ * http://www.rtems.org/license/LICENSE.
++ */
++
++#ifdef HAVE_CONFIG_H
++  #include "config.h"
++#endif
++
++#include <rtems/asm.h>
++#include "rtems/score/or1k-utility.h"
++
++.text
++.align 4
++
++PUBLIC(_CPU_Context_switch)
++PUBLIC(_CPU_Context_restore)
++PUBLIC(_CPU_Context_restore_fp)
++PUBLIC(_CPU_Context_save_fp)
++
++SYM(_CPU_Context_switch):
++  l.sw  0(r3),r1
++  l.sw  4(r3),r2
++  l.sw  8(r3),r3  
++  l.sw  12(r3),r4 
++  l.sw  16(r3),r5
++  l.sw  20(r3),r6
++  l.sw  24(r3),r7
++  l.sw  28(r3),r8
++  l.sw  32(r3),r9
++  /* Skip r10 as it's preserved to be used by TLS */
++  /* The following set if registers are preserved across function calls */
++  l.sw  52(r3),r14
++  l.sw  60(r3),r16
++  l.sw  68(r3),r18
++  l.sw  76(r3),r20
++  l.sw  84(r3),r22
++  l.sw  92(r3),r24
++  l.sw  100(r3),r26
++  l.sw  108(r3),r28
++  l.sw  116(r3),r30
++  
++  /* Supervision Register */
++  l.mfspr r13,r0, CPU_OR1K_SPR_SR  
++  l.sw  124(r3),r13
++  
++  /* EPCR */
++  l.mfspr r13, r0, CPU_OR1K_SPR_EPCR0 
++  l.sw  128(r3), r13 /* epcr */
++
++  /* EEAR */
++  l.mfspr r13, r0, CPU_OR1K_SPR_EEAR0 
++  l.sw  132(r3), r13 /* eear */
++  
++  /* ESR */
++  l.mfspr r13, r0, CPU_OR1K_SPR_ESR0 
++  l.sw  136(r3), r13  /* esr */
++  
++SYM(restore):
++  l.lwz   r13,124(r4)
++  l.mtspr r0,r13, CPU_OR1K_SPR_SR
++  
++  /* Exception level related registers */
++  
++  /* EPCR */
++  l.lwz  r13,  128(r4)
++  l.mtspr r0, r13, CPU_OR1K_SPR_EPCR0 
++
++  /* EEAR */
++  l.lwz  r13,  132(r4)
++  l.mtspr r0, r13, CPU_OR1K_SPR_EEAR0 
++  
++  /* ESR */
++  l.lwz  r13,  136(r4)
++  l.mtspr r0, r13, CPU_OR1K_SPR_ESR0
++  
++  l.lwz  r1,0(r4)
++  l.lwz  r2,4(r4)
++  l.lwz  r3,8(r4)
++  /* Skip r4 as it contains the current buffer address */
++  l.lwz  r5,16(r4)
++  l.lwz  r6,20(r4)
++  l.lwz  r7,24(r4)
++  l.lwz  r8,28(r4)
++  l.lwz  r9,32(r4)
++  l.lwz  r14,52(r4)
++  l.lwz  r16,60(r4)
++  l.lwz  r18,68(r4)
++  l.lwz  r20,76(r4)
++  l.lwz  r22,84(r4)
++  l.lwz  r24,92(r4)
++  l.lwz  r26,100(r4)
++  l.lwz  r28,108(r4)
++  l.lwz  r30,116(r4)
++  
++  l.lwz  r4,12(r4)
++  
++  l.jr   r9
++  l.nop
++  
++ SYM(_CPU_Context_restore):
++  l.add   r4,r3,r0
++  l.add   r13,r0,r0
++  l.j     restore
++  l.nop
++  
++ SYM(_CPU_Context_restore_fp):
++  l.nop
++  
++ SYM(_CPU_Context_save_fp):
++  l.nop
++  
+diff --git a/cpukit/score/cpu/or1k/or1k-exception-default.c b/cpukit/score/cpu/or1k/or1k-exception-default.c
+new file mode 100644
+index 0000000..367ac02
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/or1k-exception-default.c
+@@ -0,0 +1,24 @@
++/*
++ * COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *
++ * The license and distribution terms for this file may be
++ * found in the file LICENSE in this distribution or at
++ * http://www.rtems.org/license/LICENSE.
++ */
++ 
++#ifdef HAVE_CONFIG_H
++  #include "config.h"
++#endif
++
++#include <rtems/score/cpu.h>
++#include <rtems/fatal.h>
++#include <bsp/linker-symbols.h>
++
++void _OR1K_Exception_default(uint32_t vector, CPU_Exception_frame *frame);
++
++void _OR1K_Exception_default(uint32_t vector, CPU_Exception_frame *frame)
++{
++  printk("Exception occured with vector number %d", vector);
++  rtems_fatal( RTEMS_FATAL_SOURCE_EXCEPTION, (rtems_fatal_code) frame );
++}
++
+diff --git a/cpukit/score/cpu/or1k/or1k-exception-frame-print.c b/cpukit/score/cpu/or1k/or1k-exception-frame-print.c
+new file mode 100644
+index 0000000..75e169c
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/or1k-exception-frame-print.c
+@@ -0,0 +1,22 @@
++/*
++ * COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *
++ * The license and distribution terms for this file may be
++ * found in the file LICENSE in this distribution or at
++ * http://www.rtems.org/license/LICENSE.
++ */
++
++#ifdef HAVE_CONFIG_H
++  #include "config.h"
++#endif
++
++#include <rtems/score/cpu.h>
++#include <rtems/bspIo.h>
++
++void _CPU_Exception_frame_print( const CPU_Exception_frame *frame )
++{
++  uint32_t i;
++  for ( i = 0; i < 32; ++i ) {
++      printk( "r%02i = 0x%016x\n",i, frame->r[i]);
++  }
++}
+diff --git a/cpukit/score/cpu/or1k/or1k-exception-handler-low.S b/cpukit/score/cpu/or1k/or1k-exception-handler-low.S
+new file mode 100644
+index 0000000..00da0ec
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/or1k-exception-handler-low.S
+@@ -0,0 +1,285 @@
++/**
++ * @file
++ *
++ * @ingroup ScoreCPU
++ *
++ * @brief OR1K exception support implementation.
++ */
++
++/*
++ *  COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *
++ *  The license and distribution terms for this file may be
++ *  found in the file LICENSE in this distribution or at
++ *  http://www.rtems.org/license/LICENSE.
++ *
++ */
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include <rtems/asm.h>
++#include <rtems/score/percpu.h>
++#include "rtems/score/or1k-utility.h"
++
++.align 4
++.text
++PUBLIC(_ISR_Handler) 
++.type	  _ISR_Handler,@function
++
++ SYM(_ISR_Handler):
++  
++  l.addi  r1, r1, -140
++  
++  /* r3 is saved by BSP exception handler */
++  l.sw  16(r1),r4
++  l.sw  20(r1),r5
++  l.sw  24(r1),r6
++  
++  /* Save interrupted task stack pointer */
++  l.addi r4, r1, 144
++  l.sw   4(r1), r4
++  
++  /* Save interrupted task r3 (first arg) value */
++  l.addi r4, r1, 140
++  l.lwz  r4, 0(r4)
++  l.sw  12(r1), r4
++  
++  /* Increment nesting level */
++  l.movhi r6, hi(ISR_NEST_LEVEL)
++  l.ori   r6, r6, lo(ISR_NEST_LEVEL)
++  l.lwz   r5, 0(r6)
++  l.addi  r5, r5, 1
++  l.sw    0(r6), r5
++  
++  /* Disable multitasking */
++  l.movhi r6, hi(THREAD_DISPATCH_DISABLE_LEVEL)
++  l.ori   r6, r6, lo(THREAD_DISPATCH_DISABLE_LEVEL)
++  l.lwz   r5, 0(r6)
++  l.addi  r5, r5, 1
++  l.sw    0(r6), r5
++  
++  l.sw  8(r1),r2
++  
++  l.sw  24(r1),r6 
++  l.sw  28(r1),r7
++  l.sw  32(r1),r8
++  l.sw  36(r1),r9
++  l.sw  40(r1),r10
++  l.sw  44(r1),r11
++  l.sw  48(r1),r12
++  l.sw  52(r1),r13
++  l.sw  56(r1),r14
++  l.sw  60(r1),r15
++  l.sw  64(r1),r16
++  l.sw  68(r1),r17
++  l.sw  72(r1),r18
++  l.sw  76(r1),r19
++  l.sw  80(r1),r20
++  l.sw  84(r1),r21
++  l.sw  88(r1),r22
++  l.sw  92(r1),r23
++  l.sw  96(r1),r24
++  l.sw  100(r1),r25
++  l.sw  104(r1),r26
++  l.sw  108(r1),r27
++  l.sw  112(r1),r28
++  l.sw  116(r1),r29
++  l.sw  120(r1),r30
++  l.sw  124(r1),r31
++  /* Exception level related registers */
++  
++  /* EPCR */
++  l.mfspr r13, r0, CPU_OR1K_SPR_EPCR0 
++  l.sw  128(r1), r13 /* epcr */
++
++  /* EEAR */
++  l.mfspr r13, r0, CPU_OR1K_SPR_EEAR0 
++  l.sw  132(r1), r13 /* eear */
++  
++  /* ESR */
++  l.mfspr r13, r0, CPU_OR1K_SPR_ESR0 
++  l.sw  136(r1), r13  /* esr */ 
++
++  /* Keep r1 (Exception frame address) in r14 */
++  l.add   r14, r1, r0
++  
++  /* Call the exception handler from vector table */
++  
++  /* First function arg for C handler is vector number,
++   * and the second is a pointer to exception frame. 
++   */
++  l.add  r13, r3, r0 
++  l.add  r4, r1, r0
++  l.slli r13, r13, 2
++  l.addi r13, r13, lo(bsp_start_vector_table_begin)
++  l.lwz  r13, 0(r13)
++  
++   /* Switch to RTEMS dedicated interrupt stack */
++  l.movhi r1, hi(INTERRUPT_STACK_HIGH)
++  l.ori   r1, r1, lo(INTERRUPT_STACK_HIGH)
++  l.lwz   r1, 0(r1)
++  
++  l.jalr r13
++  l.nop
++  
++ SYM(exception_frame_restore):
++
++  l.add r1, r14, r0
++  
++  /* Exception level related registers */
++  
++  /* EPCR */
++  l.lwz  r13,  128(r1)
++  l.mtspr r0, r13, CPU_OR1K_SPR_EPCR0 
++
++  /* EEAR */
++  l.lwz  r13,  132(r1)
++  l.mtspr r0, r13, CPU_OR1K_SPR_EEAR0 
++  
++  /* ESR */
++  l.lwz  r13,  136(r1)
++  l.mtspr r0, r13, CPU_OR1K_SPR_ESR0
++  
++  /* Decrement nesting level */
++  l.movhi r6, hi(ISR_NEST_LEVEL)
++  l.ori   r6, r6, lo(ISR_NEST_LEVEL)
++  l.lwz   r5, 0(r6)
++  l.addi  r5, r5, -1
++  l.sw    0(r6), r5
++  
++  /* Enable multitasking */
++  l.movhi r6, hi(THREAD_DISPATCH_DISABLE_LEVEL)
++  l.ori   r6, r6, lo(THREAD_DISPATCH_DISABLE_LEVEL)
++  l.lwz   r5, 0(r6)
++  l.addi  r5, r5, -1
++  l.sw    0(r6), r5
++  
++  l.lwz  r2,  8(r1)
++  l.lwz  r3,  12(r1)
++  l.lwz  r4,  16(r1)
++  l.lwz  r5,  20(r1)
++  l.lwz  r6,  24(r1)
++  l.lwz  r7,  28(r1)
++  l.lwz  r8,  32(r1)
++  l.lwz  r9,  36(r1)
++  l.lwz  r10, 40(r1)
++  l.lwz  r11, 44(r1)
++  l.lwz  r12, 48(r1)
++  l.lwz  r13, 52(r1)
++  l.lwz  r14, 56(r1)
++  l.lwz  r15, 60(r1)
++  l.lwz  r16, 64(r1)
++  l.lwz  r17, 68(r1)
++  l.lwz  r18, 72(r1)
++  l.lwz  r19, 76(r1)
++  l.lwz  r20, 80(r1)
++  l.lwz  r21, 84(r1)
++  l.lwz  r22, 88(r1)
++  l.lwz  r23, 92(r1)
++  l.lwz  r24, 96(r1)
++  l.lwz  r25, 100(r1)
++  l.lwz  r26, 104(r1)
++  l.lwz  r27, 108(r1)
++  l.lwz  r28, 112(r1)
++  l.lwz  r29, 116(r1)
++  l.lwz  r30, 120(r1)
++  
++  l.movhi r31, hi(DISPATCH_NEEDED)
++  l.ori   r31, r3, lo(DISPATCH_NEEDED)
++  l.lwz   r31, 0(r31)
++  l.sfgtu r31, r0 
++  l.lwz   r31, 124(r1)
++  l.bf    _ISR_Dispatch /* Thread dispatch necessary */
++  l.nop 
++  
++  l.addi r1, r1, 140
++  
++  l.lwz  r3, 0(r1)
++  l.addi r1, r1, 4
++  
++  l.rfe
++  l.nop
++
++PUBLIC(_ISR_Dispatch)
++SYM (_ISR_Dispatch):
++
++  l.sw  4(r1),r1
++  l.sw  8(r1),r2
++  l.sw  16(r1),r4 
++  l.sw  20(r1),r5
++  l.sw  24(r1),r6
++  l.sw  28(r1),r7
++  l.sw  32(r1),r8
++  /* Skip r10 as it's preserved to be used by TLS */
++  /* The following set of registers are preserved across function calls */
++  l.sw  56(r1),r14
++  l.sw  64(r1),r16
++  l.sw  72(r1),r18
++  l.sw  80(r1),r20
++  l.sw  88(r1),r22
++  l.sw  96(r1),r24
++  l.sw  104(r1),r26
++  l.sw  112(r1),r28
++  l.sw  120(r1),r30
++  
++  l.movhi r13, hi(_Thread_Dispatch)
++  l.ori   r13, r13, lo(_Thread_Dispatch)
++  l.jalr  r13
++  l.nop
++  
++  /* Exception level related registers */
++  
++  /* EPCR */
++  l.lwz  r13,  128(r1)
++  l.mtspr r0, r13, CPU_OR1K_SPR_EPCR0 
++
++  /* EEAR */
++  l.lwz  r13,  132(r1)
++  l.mtspr r0, r13, CPU_OR1K_SPR_EEAR0 
++  
++  /* ESR */
++  l.lwz  r13,  136(r1)
++  l.mtspr r0, r13, CPU_OR1K_SPR_ESR0
++  
++  l.lwz  r1,  4(r1)
++  l.lwz  r2,  8(r1)
++  l.lwz  r4,  12(r1)
++  l.lwz  r4,  16(r1)
++  l.lwz  r5,  20(r1)
++  l.lwz  r6,  24(r1)
++  l.lwz  r7,  28(r1)
++  l.lwz  r8,  32(r1)
++  l.lwz  r9,  36(r1)
++  l.lwz  r10, 40(r1)
++  l.lwz  r11, 44(r1)
++  l.lwz  r12, 48(r1)
++  l.lwz  r13, 52(r1)
++  l.lwz  r14, 56(r1)
++  l.lwz  r15, 60(r1)
++  l.lwz  r16, 64(r1)
++  l.lwz  r17, 68(r1)
++  l.lwz  r18, 72(r1)
++  l.lwz  r19, 76(r1)
++  l.lwz  r20, 80(r1)
++  l.lwz  r21, 84(r1)
++  l.lwz  r22, 88(r1)
++  l.lwz  r23, 92(r1)
++  l.lwz  r24, 96(r1)
++  l.lwz  r25, 100(r1)
++  l.lwz  r26, 104(r1)
++  l.lwz  r27, 108(r1)
++  l.lwz  r28, 112(r1)
++  l.lwz  r29, 116(r1)
++  l.lwz  r30, 120(r1)
++  l.lwz  r31, 124(r1)
++  
++  l.addi r1, r1, 140
++  
++  l.lwz  r3, 0(r1)
++  l.addi r1, r1, 4
++  
++  l.rfe
++  l.nop
++
+diff --git a/cpukit/score/cpu/or1k/rtems/asm.h b/cpukit/score/cpu/or1k/rtems/asm.h
+new file mode 100644
+index 0000000..4d2c226
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/rtems/asm.h
+@@ -0,0 +1,99 @@
++/**
++ * @file rtems/asm.h
++ *
++ *  This include file attempts to address the problems
++ *  caused by incompatible flavors of assemblers and
++ *  toolsets.  It primarily addresses variations in the
++ *  use of leading underscores on symbols and the requirement
++ *  that register names be preceded by a %.
++ */
++
++/*
++ *  NOTE: The spacing in the use of these macros
++ *        is critical to them working as advertised.
++ *
++ *  COPYRIGHT:
++ *
++ *  This file is based on similar code found in newlib available
++ *  from ftp.cygnus.com.  The file which was used had no copyright
++ *  notice.  This file is freely distributable as long as the source
++ *  of the file is noted.  This file is:
++ *
++ *  COPYRIGHT (c) 1994-1997.
++ *  On-Line Applications Research Corporation (OAR).
++ *
++ */
++
++#ifndef __OR1K_ASM_h
++#define __OR1K_ASM_h
++
++/*
++ *  Indicate we are in an assembly file and get the basic CPU definitions.
++ */
++
++#ifndef ASM
++#define ASM
++#endif
++#include <rtems/score/cpuopts.h>
++#include <rtems/score/or1k.h>
++
++/*
++ *  Recent versions of GNU cpp define variables which indicate the
++ *  need for underscores and percents.  If not using GNU cpp or
++ *  the version does not support this, then you will obviously
++ *  have to define these as appropriate.
++ */
++
++#ifndef __USER_LABEL_PREFIX__
++#define __USER_LABEL_PREFIX__ _
++#endif
++
++#ifndef __REGISTER_PREFIX__
++#define __REGISTER_PREFIX__
++#endif
++
++/* ANSI concatenation macros.  */
++
++#define CONCAT1(a, b) CONCAT2(a, b)
++#define CONCAT2(a, b) a ## b
++
++/* Use the right prefix for global labels.  */
++
++#define SYM(x) CONCAT1 (__USER_LABEL_PREFIX__, x)
++
++/* Use the right prefix for registers.  */
++
++#define REG(x) CONCAT1 (__REGISTER_PREFIX__, x)
++
++/*
++ *  define macros for all of the registers on this CPU
++ *
++ *  EXAMPLE:     #define d0 REG (d0)
++ */
++
++/*
++ *  Define macros to handle section beginning and ends.
++ */
++
++
++#define BEGIN_CODE_DCL .text
++#define END_CODE_DCL
++#define BEGIN_DATA_DCL .data
++#define END_DATA_DCL
++#define BEGIN_CODE .text
++#define END_CODE
++#define BEGIN_DATA
++#define END_DATA
++#define BEGIN_BSS
++#define END_BSS
++#define END
++
++/*
++ *  Following must be tailor for a particular flavor of the C compiler.
++ *  They may need to put underscores in front of the symbols.
++ */
++
++#define PUBLIC(sym) .global SYM (sym)
++#define EXTERN(sym) .global SYM (sym)
++
++#endif
+diff --git a/cpukit/score/cpu/or1k/rtems/score/cpu.h b/cpukit/score/cpu/or1k/rtems/score/cpu.h
+new file mode 100644
+index 0000000..6e05edc
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/rtems/score/cpu.h
+@@ -0,0 +1,1049 @@
++/**
++ * @file rtems/score/cpu.h
++ */
++
++/*
++ *  This include file contains macros pertaining to the Opencores
++ *  or1k processor family.
++ *
++ *  COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *  COPYRIGHT (c) 1989-1999.
++ *  On-Line Applications Research Corporation (OAR).
++ *
++ *  The license and distribution terms for this file may be
++ *  found in the file LICENSE in this distribution or at
++ *  http://www.rtems.com/license/LICENSE.
++ *
++ *  This file adapted from no_cpu example of the RTEMS distribution.
++ *  The body has been modified for the Opencores OR1k implementation by
++ *  Chris Ziomkowski. <chris@asics.ws>
++ *
++ */
++
++#ifndef _OR1K_CPU_H
++#define _OR1K_CPU_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++
++#include <rtems/score/or1k.h>            /* pick up machine definitions */
++#include <rtems/score/or1k-utility.h>
++#include <rtems/score/types.h>
++#ifndef ASM
++#include <stdint.h>
++#endif
++
++/* conditional compilation parameters */
++
++/*
++ *  Should the calls to _Thread_Enable_dispatch be inlined?
++ *
++ *  If TRUE, then they are inlined.
++ *  If FALSE, then a subroutine call is made.
++ *
++ *  Basically this is an example of the classic trade-off of size
++ *  versus speed.  Inlining the call (TRUE) typically increases the
++ *  size of RTEMS while speeding up the enabling of dispatching.
++ *  [NOTE: In general, the _Thread_Dispatch_disable_level will
++ *  only be 0 or 1 unless you are in an interrupt handler and that
++ *  interrupt handler invokes the executive.]  When not inlined
++ *  something calls _Thread_Enable_dispatch which in turns calls
++ *  _Thread_Dispatch.  If the enable dispatch is inlined, then
++ *  one subroutine call is avoided entirely.]
++ *
++ */
++
++#define CPU_INLINE_ENABLE_DISPATCH       FALSE
++
++/*
++ *  Should the body of the search loops in _Thread_queue_Enqueue_priority
++ *  be unrolled one time?  In unrolled each iteration of the loop examines
++ *  two "nodes" on the chain being searched.  Otherwise, only one node
++ *  is examined per iteration.
++ *
++ *  If TRUE, then the loops are unrolled.
++ *  If FALSE, then the loops are not unrolled.
++ *
++ *  The primary factor in making this decision is the cost of disabling
++ *  and enabling interrupts (_ISR_Flash) versus the cost of rest of the
++ *  body of the loop.  On some CPUs, the flash is more expensive than
++ *  one iteration of the loop body.  In this case, it might be desirable
++ *  to unroll the loop.  It is important to note that on some CPUs, this
++ *  code is the longest interrupt disable period in RTEMS.  So it is
++ *  necessary to strike a balance when setting this parameter.
++ *
++ */
++
++#define CPU_UNROLL_ENQUEUE_PRIORITY      TRUE
++
++/*
++ *  Does RTEMS manage a dedicated interrupt stack in software?
++ *
++ *  If TRUE, then a stack is allocated in _ISR_Handler_initialization.
++ *  If FALSE, nothing is done.
++ *
++ *  If the CPU supports a dedicated interrupt stack in hardware,
++ *  then it is generally the responsibility of the BSP to allocate it
++ *  and set it up.
++ *
++ *  If the CPU does not support a dedicated interrupt stack, then
++ *  the porter has two options: (1) execute interrupts on the
++ *  stack of the interrupted task, and (2) have RTEMS manage a dedicated
++ *  interrupt stack.
++ *
++ *  If this is TRUE, CPU_ALLOCATE_INTERRUPT_STACK should also be TRUE.
++ *
++ *  Only one of CPU_HAS_SOFTWARE_INTERRUPT_STACK and
++ *  CPU_HAS_HARDWARE_INTERRUPT_STACK should be set to TRUE.  It is
++ *  possible that both are FALSE for a particular CPU.  Although it
++ *  is unclear what that would imply about the interrupt processing
++ *  procedure on that CPU.
++ *
++ *  Currently, for or1k port, _ISR_Handler is responsible for switching to
++ *  RTEMS dedicated interrupt task.
++ *
++ */
++
++#define CPU_HAS_SOFTWARE_INTERRUPT_STACK TRUE
++
++/*
++ *  Does this CPU have hardware support for a dedicated interrupt stack?
++ *
++ *  If TRUE, then it must be installed during initialization.
++ *  If FALSE, then no installation is performed.
++ *
++ *  If this is TRUE, CPU_ALLOCATE_INTERRUPT_STACK should also be TRUE.
++ *
++ *  Only one of CPU_HAS_SOFTWARE_INTERRUPT_STACK and
++ *  CPU_HAS_HARDWARE_INTERRUPT_STACK should be set to TRUE.  It is
++ *  possible that both are FALSE for a particular CPU.  Although it
++ *  is unclear what that would imply about the interrupt processing
++ *  procedure on that CPU.
++ *
++ */
++
++#define CPU_HAS_HARDWARE_INTERRUPT_STACK FALSE
++
++/*
++ *  Does RTEMS allocate a dedicated interrupt stack in the Interrupt Manager?
++ *
++ *  If TRUE, then the memory is allocated during initialization.
++ *  If FALSE, then the memory is allocated during initialization.
++ *
++ *  This should be TRUE is CPU_HAS_SOFTWARE_INTERRUPT_STACK is TRUE
++ *  or CPU_INSTALL_HARDWARE_INTERRUPT_STACK is TRUE.
++ *
++ */
++
++#define CPU_ALLOCATE_INTERRUPT_STACK TRUE
++
++/*
++ *  Does the RTEMS invoke the user's ISR with the vector number and
++ *  a pointer to the saved interrupt frame (1) or just the vector 
++ *  number (0)?
++ *
++ */
++
++#define CPU_ISR_PASSES_FRAME_POINTER 1
++
++/*
++ *  Does the CPU have hardware floating point?
++ *
++ *  If TRUE, then the RTEMS_FLOATING_POINT task attribute is supported.
++ *  If FALSE, then the RTEMS_FLOATING_POINT task attribute is ignored.
++ *
++ *  If there is a FP coprocessor such as the i387 or mc68881, then
++ *  the answer is TRUE.
++ *
++ *  The macro name "OR1K_HAS_FPU" should be made CPU specific.
++ *  It indicates whether or not this CPU model has FP support.  For
++ *  example, it would be possible to have an i386_nofp CPU model
++ *  which set this to false to indicate that you have an i386 without
++ *  an i387 and wish to leave floating point support out of RTEMS.
++ *
++ *  The CPU_SOFTWARE_FP is used to indicate whether or not there
++ *  is software implemented floating point that must be context 
++ *  switched.  The determination of whether or not this applies
++ *  is very tool specific and the state saved/restored is also
++ *  compiler specific.
++ *
++ *  Or1k Specific Information:
++ *
++ *  At this time there are no implementations of Or1k that are
++ *  expected to implement floating point. More importantly, the
++ *  floating point architecture is expected to change significantly
++ *  before such chips are fabricated.
++ */
++
++#if ( OR1K_HAS_FPU == 1 )
++#define CPU_HARDWARE_FP     TRUE
++#define CPU_SOFTWARE_FP     FALSE
++#else
++#define CPU_HARDWARE_FP     FALSE
++#define CPU_SOFTWARE_FP     TRUE
++#endif
++
++
++/*
++ *  Are all tasks RTEMS_FLOATING_POINT tasks implicitly?
++ *
++ *  If TRUE, then the RTEMS_FLOATING_POINT task attribute is assumed.
++ *  If FALSE, then the RTEMS_FLOATING_POINT task attribute is followed.
++ *
++ *  If CPU_HARDWARE_FP is FALSE, then this should be FALSE as well.
++ *
++ */
++
++#define CPU_ALL_TASKS_ARE_FP     FALSE
++
++/*
++ *  Should the IDLE task have a floating point context?
++ *
++ *  If TRUE, then the IDLE task is created as a RTEMS_FLOATING_POINT task
++ *  and it has a floating point context which is switched in and out.
++ *  If FALSE, then the IDLE task does not have a floating point context.
++ *
++ *  Setting this to TRUE negatively impacts the time required to preempt
++ *  the IDLE task from an interrupt because the floating point context
++ *  must be saved as part of the preemption.
++ *
++ */
++
++#define CPU_IDLE_TASK_IS_FP      FALSE
++
++/*
++ *  Should the saving of the floating point registers be deferred
++ *  until a context switch is made to another different floating point
++ *  task?
++ *
++ *  If TRUE, then the floating point context will not be stored until
++ *  necessary.  It will remain in the floating point registers and not
++ *  disturned until another floating point task is switched to.
++ *
++ *  If FALSE, then the floating point context is saved when a floating
++ *  point task is switched out and restored when the next floating point
++ *  task is restored.  The state of the floating point registers between
++ *  those two operations is not specified.
++ *
++ *  If the floating point context does NOT have to be saved as part of
++ *  interrupt dispatching, then it should be safe to set this to TRUE.
++ *
++ *  Setting this flag to TRUE results in using a different algorithm
++ *  for deciding when to save and restore the floating point context.
++ *  The deferred FP switch algorithm minimizes the number of times
++ *  the FP context is saved and restored.  The FP context is not saved
++ *  until a context switch is made to another, different FP task.
++ *  Thus in a system with only one FP task, the FP context will never
++ *  be saved or restored.
++ *
++ */
++
++#define CPU_USE_DEFERRED_FP_SWITCH       TRUE
++
++/*
++ *  Does this port provide a CPU dependent IDLE task implementation?
++ *
++ *  If TRUE, then the routine _CPU_Thread_Idle_body
++ *  must be provided and is the default IDLE thread body instead of
++ *  _CPU_Thread_Idle_body.
++ *
++ *  If FALSE, then use the generic IDLE thread body if the BSP does
++ *  not provide one.
++ *
++ *  This is intended to allow for supporting processors which have
++ *  a low power or idle mode.  When the IDLE thread is executed, then
++ *  the CPU can be powered down.
++ *
++ *  The order of precedence for selecting the IDLE thread body is:
++ *
++ *    1.  BSP provided
++ *    2.  CPU dependent (if provided)
++ *    3.  generic (if no BSP and no CPU dependent)
++ *
++ */
++
++#define CPU_PROVIDES_IDLE_THREAD_BODY    FALSE
++
++/*
++ *  Does the stack grow up (toward higher addresses) or down
++ *  (toward lower addresses)?
++ *
++ *  If TRUE, then the grows upward.
++ *  If FALSE, then the grows toward smaller addresses.
++ *
++ */
++
++#define CPU_STACK_GROWS_UP               FALSE
++
++/*
++ *  The following is the variable attribute used to force alignment
++ *  of critical RTEMS structures.  On some processors it may make
++ *  sense to have these aligned on tighter boundaries than
++ *  the minimum requirements of the compiler in order to have as
++ *  much of the critical data area as possible in a cache line.
++ *
++ *  The placement of this macro in the declaration of the variables
++ *  is based on the syntactically requirements of the GNU C
++ *  "__attribute__" extension.  For example with GNU C, use
++ *  the following to force a structures to a 32 byte boundary.
++ *
++ *      __attribute__ ((aligned (32)))
++ *
++ *  NOTE:  Currently only the Priority Bit Map table uses this feature.
++ *         To benefit from using this, the data must be heavily
++ *         used so it will stay in the cache and used frequently enough
++ *         in the executive to justify turning this on.
++ *
++ */
++
++#define CPU_STRUCTURE_ALIGNMENT __attribute__ ((aligned (32)))
++
++/*
++ *  Define what is required to specify how the network to host conversion
++ *  routines are handled.
++ *
++ *  Or1k Specific Information:
++ *
++ *  This version of RTEMS is designed specifically to run with
++ *  big endian architectures. If you want little endian, you'll
++ *  have to make the appropriate adjustments here and write
++ *  efficient routines for byte swapping. The Or1k architecture
++ *  doesn't do this very well.
++ */
++
++#define CPU_HAS_OWN_HOST_TO_NETWORK_ROUTINES     FALSE
++#define CPU_BIG_ENDIAN                           TRUE
++#define CPU_LITTLE_ENDIAN                        FALSE
++
++/*
++ *  The following defines the number of bits actually used in the
++ *  interrupt field of the task mode.  How those bits map to the
++ *  CPU interrupt levels is defined by the routine _CPU_ISR_Set_level().
++ *
++ */
++
++#define CPU_MODES_INTERRUPT_MASK   0x00000001
++
++/*
++ *  Processor defined structures required for cpukit/score.
++ */
++
++
++/*
++ * Contexts
++ *
++ *  Generally there are 2 types of context to save.
++ *     1. Interrupt registers to save
++ *     2. Task level registers to save
++ *
++ *  This means we have the following 3 context items:
++ *     1. task level context stuff::  Context_Control
++ *     2. floating point task stuff:: Context_Control_fp
++ *     3. special interrupt level context :: Context_Control_interrupt
++ *
++ *  On some processors, it is cost-effective to save only the callee
++ *  preserved registers during a task context switch.  This means
++ *  that the ISR code needs to save those registers which do not
++ *  persist across function calls.  It is not mandatory to make this
++ *  distinctions between the caller/callee saves registers for the
++ *  purpose of minimizing context saved during task switch and on interrupts.
++ *  If the cost of saving extra registers is minimal, simplicity is the
++ *  choice.  Save the same context on interrupt entry as for tasks in
++ *  this case.
++ *
++ *  Additionally, if gdb is to be made aware of RTEMS tasks for this CPU, then
++ *  care should be used in designing the context area.
++ *
++ *  On some CPUs with hardware floating point support, the Context_Control_fp
++ *  structure will not be used or it simply consist of an array of a
++ *  fixed number of bytes.   This is done when the floating point context
++ *  is dumped by a "FP save context" type instruction and the format
++ *  is not really defined by the CPU.  In this case, there is no need
++ *  to figure out the exact format -- only the size.  Of course, although
++ *  this is enough information for RTEMS, it is probably not enough for
++ *  a debugger such as gdb.  But that is another problem.
++ *
++ *  
++ */
++#ifndef ASM
++#ifdef OR1K_64BIT_ARCH
++#define or1kreg uint64_t  
++#else
++#define or1kreg uint32_t  
++#endif
++
++typedef struct {
++  uint32_t  r1;     /* Stack pointer */
++  uint32_t  r2;     /* Frame pointer */
++  uint32_t  r3;
++  uint32_t  r4;
++  uint32_t  r5;
++  uint32_t  r6;
++  uint32_t  r7;
++  uint32_t  r8;
++  uint32_t  r9;
++  uint32_t  r10;
++  uint32_t  r11;
++  uint32_t  r12;
++  uint32_t  r13;
++  uint32_t  r14;
++  uint32_t  r15;
++  uint32_t  r16;
++  uint32_t  r17;
++  uint32_t  r18;
++  uint32_t  r19;
++  uint32_t  r20;
++  uint32_t  r21;
++  uint32_t  r22;
++  uint32_t  r23;
++  uint32_t  r24;
++  uint32_t  r25;
++  uint32_t  r26;
++  uint32_t  r27;
++  uint32_t  r28;
++  uint32_t  r29;
++  uint32_t  r30;
++  uint32_t  r31;
++  
++  uint32_t  sr;  /* Current supervision register non persistent values */
++  uint32_t  epcr;
++  uint32_t  eear;
++  uint32_t  esr;
++} Context_Control;
++
++#define _CPU_Context_Get_SP( _context ) \
++  (_context)->r1
++  
++typedef void Context_Control_fp;
++typedef Context_Control CPU_Interrupt_frame;
++
++/*
++ *  The size of the floating point context area.  On some CPUs this
++ *  will not be a "sizeof" because the format of the floating point
++ *  area is not defined -- only the size is.  This is usually on
++ *  CPUs with a "floating point save context" instruction.
++ *
++ *  Or1k Specific Information:
++ *
++ */
++
++#define CPU_CONTEXT_FP_SIZE  0
++
++/*
++ *  Amount of extra stack (above minimum stack size) required by
++ *  MPCI receive server thread.  Remember that in a multiprocessor
++ *  system this thread must exist and be able to process all directives.
++ *
++ */
++
++#define CPU_MPCI_RECEIVE_SERVER_EXTRA_STACK 0
++
++/*
++ *  Should be large enough to run all RTEMS tests.  This insures
++ *  that a "reasonable" small application should not have any problems.
++ *
++ */
++
++#define CPU_STACK_MINIMUM_SIZE  4096
++
++/*
++ *  CPU's worst alignment requirement for data types on a byte boundary.  This
++ *  alignment does not take into account the requirements for the stack.
++ *
++ */
++
++#define CPU_ALIGNMENT  8
++
++/*
++ *  This is defined if the port has a special way to report the ISR nesting
++ *  level.  Most ports maintain the variable _ISR_Nest_level.
++ */
++#define CPU_PROVIDES_ISR_IS_IN_PROGRESS FALSE
++
++/**
++ * Size of a pointer.
++ *
++ * This must be an integer literal that can be used by the assembler.  This
++ * value will be used to calculate offsets of structure members.  These
++ * offsets will be used in assembler code.
++ */
++#define CPU_SIZEOF_POINTER         4
++
++/*
++ *  This number corresponds to the byte alignment requirement for the
++ *  heap handler.  This alignment requirement may be stricter than that
++ *  for the data types alignment specified by CPU_ALIGNMENT.  It is
++ *  common for the heap to follow the same alignment requirement as
++ *  CPU_ALIGNMENT.  If the CPU_ALIGNMENT is strict enough for the heap,
++ *  then this should be set to CPU_ALIGNMENT.
++ *
++ *  NOTE:  This does not have to be a power of 2 although it should be
++ *         a multiple of 2 greater than or equal to 2.  The requirement
++ *         to be a multiple of 2 is because the heap uses the least 
++ *         significant field of the front and back flags to indicate
++ *         that a block is in use or free.  So you do not want any odd
++ *         length blocks really putting length data in that bit.
++ *
++ *         On byte oriented architectures, CPU_HEAP_ALIGNMENT normally will
++ *         have to be greater or equal to than CPU_ALIGNMENT to ensure that
++ *         elements allocated from the heap meet all restrictions.
++ *
++ */
++
++#define CPU_HEAP_ALIGNMENT         CPU_ALIGNMENT
++
++/*
++ *  This number corresponds to the byte alignment requirement for memory
++ *  buffers allocated by the partition manager.  This alignment requirement
++ *  may be stricter than that for the data types alignment specified by
++ *  CPU_ALIGNMENT.  It is common for the partition to follow the same
++ *  alignment requirement as CPU_ALIGNMENT.  If the CPU_ALIGNMENT is strict
++ *  enough for the partition, then this should be set to CPU_ALIGNMENT.
++ *
++ *  NOTE:  This does not have to be a power of 2.  It does have to
++ *         be greater or equal to than CPU_ALIGNMENT.
++ *
++ */
++
++#define CPU_PARTITION_ALIGNMENT    CPU_ALIGNMENT
++
++/*
++ *  This number corresponds to the byte alignment requirement for the
++ *  stack.  This alignment requirement may be stricter than that for the
++ *  data types alignment specified by CPU_ALIGNMENT.  If the CPU_ALIGNMENT
++ *  is strict enough for the stack, then this should be set to 0.
++ *
++ *  NOTE:  This must be a power of 2 either 0 or greater than CPU_ALIGNMENT.
++ *
++ */
++
++#define CPU_STACK_ALIGNMENT        0
++
++/* ISR handler macros */
++
++/*
++ *  Support routine to initialize the RTEMS vector table after it is allocated.
++ *  
++ *  NO_CPU Specific Information:
++ * 
++ *  XXX document implementation including references if appropriate
++ */
++
++#define _CPU_Initialize_vectors()
++
++/*
++ *  Disable all interrupts for an RTEMS critical section.  The previous
++ *  level is returned in _level.
++ *
++ */
++
++static inline uint32_t or1k_interrupt_disable( void )
++{
++  volatile uint32_t sr;
++  
++  sr = _OR1K_mfspr(CPU_OR1K_SPR_SR);
++  
++  _OR1K_mtspr(CPU_OR1K_SPR_SR, (sr & CPU_OR1K_ISR_STATUS_MASK_I_DIS));
++  
++  return sr;
++}
++
++static inline void or1k_interrupt_enable(uint32_t level)
++{
++  volatile uint32_t sr;
++  
++  /* Enable interrupts and restore rs */
++  sr = level | CPU_OR1K_SPR_SR_IEE | CPU_OR1K_SPR_SR_TEE; 
++  _OR1K_mtspr(CPU_OR1K_SPR_SR, sr);
++
++}
++
++#define _CPU_ISR_Disable( _isr_cookie ) \
++  do{ \
++    _isr_cookie = or1k_interrupt_disable(); \
++  } while (0)
++
++/*
++ *  Enable interrupts to the previous level (returned by _CPU_ISR_Disable).
++ *  This indicates the end of an RTEMS critical section.  The parameter
++ *  _level is not modified.
++ *
++ */
++
++#define _CPU_ISR_Enable( _isr_cookie )  \
++  or1k_interrupt_enable( _isr_cookie )
++
++/*
++ *  This temporarily restores the interrupt to _level before immediately
++ *  disabling them again.  This is used to divide long RTEMS critical
++ *  sections into two or more parts.  The parameter _level is not
++ *  modified.
++ *
++ */
++
++#define _CPU_ISR_Flash( _isr_cookie ) \
++  { \
++  }
++
++/*
++ *  Map interrupt level in task mode onto the hardware that the CPU
++ *  actually provides.  Currently, interrupt levels which do not
++ *  map onto the CPU in a generic fashion are undefined.  Someday,
++ *  it would be nice if these were "mapped" by the application
++ *  via a callout.  For example, m68k has 8 levels 0 - 7, levels
++ *  8 - 255 would be available for bsp/application specific meaning.
++ *  This could be used to manage a programmable interrupt controller
++ *  via the rtems_task_mode directive.
++ *
++ *  The get routine usually must be implemented as a subroutine.
++ *
++ */
++
++void   _CPU_ISR_Set_level( uint32_t level );
++
++uint32_t   _CPU_ISR_Get_level( void );
++
++/* end of ISR handler macros */
++
++/* Context handler macros */
++
++#define OR1K_FAST_CONTEXT_SWITCH_ENABLED FALSE
++/*
++ *  Initialize the context to a state suitable for starting a
++ *  task after a context restore operation.  Generally, this
++ *  involves:
++ *
++ *     - setting a starting address
++ *     - preparing the stack
++ *     - preparing the stack and frame pointers
++ *     - setting the proper interrupt level in the context
++ *     - initializing the floating point context
++ *
++ *  This routine generally does not set any unnecessary register
++ *  in the context.  The state of the "general data" registers is
++ *  undefined at task start time.
++ *
++ *  NOTE: This is_fp parameter is TRUE if the thread is to be a floating
++ *        point thread.  This is typically only used on CPUs where the
++ *        FPU may be easily disabled by software such as on the SPARC
++ *        where the PSR contains an enable FPU bit.
++ *
++ */
++
++/**
++ * @brief Initializes the CPU context.
++ *
++ * The following steps are performed:
++ *  - setting a starting address
++ *  - preparing the stack
++ *  - preparing the stack and frame pointers
++ *  - setting the proper interrupt level in the context
++ *
++ * @param[in] context points to the context area
++ * @param[in] stack_area_begin is the low address of the allocated stack area
++ * @param[in] stack_area_size is the size of the stack area in bytes
++ * @param[in] new_level is the interrupt level for the task
++ * @param[in] entry_point is the task's entry point
++ * @param[in] is_fp is set to @c true if the task is a floating point task
++ * @param[in] tls_area is the thread-local storage (TLS) area
++ */
++void _CPU_Context_Initialize(
++  Context_Control *context,
++  void *stack_area_begin,
++  size_t stack_area_size,
++  uint32_t new_level,
++  void (*entry_point)( void ),
++  bool is_fp,
++  void *tls_area
++);
++
++/*
++ *  This routine is responsible for somehow restarting the currently
++ *  executing task.  If you are lucky, then all that is necessary
++ *  is restoring the context.  Otherwise, there will need to be
++ *  a special assembly routine which does something special in this
++ *  case.  Context_Restore should work most of the time.  It will
++ *  not work if restarting self conflicts with the stack frame
++ *  assumptions of restoring a context.
++ *
++ */
++
++#define _CPU_Context_Restart_self( _the_context ) \
++   _CPU_Context_restore( (_the_context) );
++
++/*
++ *  The purpose of this macro is to allow the initial pointer into
++ *  a floating point context area (used to save the floating point
++ *  context) to be at an arbitrary place in the floating point
++ *  context area.
++ *
++ *  This is necessary because some FP units are designed to have
++ *  their context saved as a stack which grows into lower addresses.
++ *  Other FP units can be saved by simply moving registers into offsets
++ *  from the base of the context area.  Finally some FP units provide
++ *  a "dump context" instruction which could fill in from high to low
++ *  or low to high based on the whim of the CPU designers.
++ *
++ */
++
++#define _CPU_Context_Fp_start( _base, _offset ) \
++   ( (void *) _Addresses_Add_offset( (_base), (_offset) ) )
++
++/*
++ *  This routine initializes the FP context area passed to it to.
++ *  There are a few standard ways in which to initialize the
++ *  floating point context.  The code included for this macro assumes
++ *  that this is a CPU in which a "initial" FP context was saved into
++ *  _CPU_Null_fp_context and it simply copies it to the destination
++ *  context passed to it.
++ *
++ *  Other models include (1) not doing anything, and (2) putting
++ *  a "null FP status word" in the correct place in the FP context.
++ *
++ */
++
++void _CPU_Context_Initialize_fp(
++  void **fp_context_ptr
++);
++
++/* end of Context handler macros */
++
++/* Fatal Error manager macros */
++
++/*
++ *  This routine copies _error into a known place -- typically a stack
++ *  location or a register, optionally disables interrupts, and
++ *  halts/stops the CPU.
++ *
++ */
++
++#define _CPU_Fatal_halt( _error ) \
++        printk("Fatal Error %d Halted\n",_error); \
++        for(;;)
++
++/* end of Fatal Error manager macros */
++
++/* Bitfield handler macros */
++
++/*
++ *  This routine sets _output to the bit number of the first bit
++ *  set in _value.  _value is of CPU dependent type Priority_Bit_map_control.
++ *  This type may be either 16 or 32 bits wide although only the 16
++ *  least significant bits will be used.
++ *
++ *  There are a number of variables in using a "find first bit" type
++ *  instruction.
++ *
++ *    (1) What happens when run on a value of zero?
++ *    (2) Bits may be numbered from MSB to LSB or vice-versa.
++ *    (3) The numbering may be zero or one based.
++ *    (4) The "find first bit" instruction may search from MSB or LSB.
++ *
++ *  RTEMS guarantees that (1) will never happen so it is not a concern.
++ *  (2),(3), (4) are handled by the macros _CPU_Priority_mask() and
++ *  _CPU_Priority_bits_index().  These three form a set of routines
++ *  which must logically operate together.  Bits in the _value are
++ *  set and cleared based on masks built by _CPU_Priority_mask().
++ *  The basic major and minor values calculated by _Priority_Major()
++ *  and _Priority_Minor() are "massaged" by _CPU_Priority_bits_index()
++ *  to properly range between the values returned by the "find first bit"
++ *  instruction.  This makes it possible for _Priority_Get_highest() to
++ *  calculate the major and directly index into the minor table.
++ *  This mapping is necessary to ensure that 0 (a high priority major/minor)
++ *  is the first bit found.
++ *
++ *  This entire "find first bit" and mapping process depends heavily
++ *  on the manner in which a priority is broken into a major and minor
++ *  components with the major being the 4 MSB of a priority and minor
++ *  the 4 LSB.  Thus (0 << 4) + 0 corresponds to priority 0 -- the highest
++ *  priority.  And (15 << 4) + 14 corresponds to priority 254 -- the next
++ *  to the lowest priority.
++ *
++ *  If your CPU does not have a "find first bit" instruction, then
++ *  there are ways to make do without it.  Here are a handful of ways
++ *  to implement this in software:
++ *
++ *    - a series of 16 bit test instructions
++ *    - a "binary search using if's"
++ *    - _number = 0
++ *      if _value > 0x00ff
++ *        _value >>=8
++ *        _number = 8;
++ *
++ *      if _value > 0x0000f
++ *        _value >=8
++ *        _number += 4
++ *
++ *      _number += bit_set_table[ _value ]
++ *
++ *    where bit_set_table[ 16 ] has values which indicate the first
++ *      bit set
++ *
++ */
++
++  /* #define CPU_USE_GENERIC_BITFIELD_CODE FALSE */
++#define CPU_USE_GENERIC_BITFIELD_CODE TRUE 
++#define CPU_USE_GENERIC_BITFIELD_DATA TRUE
++
++#if (CPU_USE_GENERIC_BITFIELD_CODE == FALSE)
++
++  /* Get a value between 0 and N where N is the bit size */
++  /* This routine makes use of the fact that CPUCFGR defines
++     OB32S to have value 32, and OB64S to have value 64. If
++     this ever changes then this routine will fail. */
++#define _CPU_Bitfield_Find_first_bit( _value, _output ) \
++     asm volatile ("l.mfspr %0,r0,0x2   \n\t"\
++                   "l.andi  %0,%0,0x60  \n\t"\
++                   "l.ff1   %1,%1,r0    \n\t"\
++                   "l.sub   %0,%0,%1    \n\t" : "=&r" (_output), "+r" (_value));
++
++#endif
++   
++/* end of Bitfield handler macros */
++
++/*
++ *  This routine builds the mask which corresponds to the bit fields
++ *  as searched by _CPU_Bitfield_Find_first_bit().  See the discussion
++ *  for that routine.
++ *
++ */
++
++#if (CPU_USE_GENERIC_BITFIELD_CODE == FALSE)
++
++#define _CPU_Priority_Mask( _bit_number ) \
++    (1 << _bit_number)
++
++#endif
++
++/*
++ *  This routine translates the bit numbers returned by
++ *  _CPU_Bitfield_Find_first_bit() into something suitable for use as
++ *  a major or minor component of a priority.  See the discussion
++ *  for that routine.
++ *
++ */
++
++#if (CPU_USE_GENERIC_BITFIELD_CODE == FALSE)
++
++#define _CPU_Priority_bits_index( _priority ) \
++  (_priority)
++
++#endif
++
++#define CPU_TIMESTAMP_USE_STRUCT_TIMESPEC TRUE
++#define CPU_TIMESTAMP_USE_INT64 FALSE
++#define CPU_TIMESTAMP_USE_INT64_INLINE FALSE
++
++typedef struct {
++/* There is no CPU specific per-CPU state */
++} CPU_Per_CPU_control;
++#endif /* ASM */
++
++#define CPU_SIZEOF_POINTER 4
++#define CPU_PER_CPU_CONTROL_SIZE 0
++
++#ifndef ASM
++typedef uint32_t CPU_Counter_ticks;
++typedef uint16_t Priority_bit_map_Word;
++
++typedef struct {
++  uint32_t r[32];
++  
++  /* The following registers must be saved if we have 
++  fast context switch disabled and nested interrupt 
++  levels are enabled. 
++  */
++#if !OR1K_FAST_CONTEXT_SWITCH_ENABLED
++  uint32_t epcr; /* exception PC register */
++  uint32_t eear; /* exception effective address register */
++  uint32_t esr; /* exception supervision register */
++#endif 
++  
++} CPU_Exception_frame;
++
++/**
++ * @brief Prints the exception frame via printk().
++ *
++ * @see rtems_fatal() and RTEMS_FATAL_SOURCE_EXCEPTION.
++ */
++void _CPU_Exception_frame_print( const CPU_Exception_frame *frame );
++
++
++/* end of Priority handler macros */
++
++/* functions */
++
++/*
++ *  _CPU_Initialize
++ *
++ *  This routine performs CPU dependent initialization.
++ *
++ */
++
++void _CPU_Initialize(
++  void
++);
++
++/*
++ *  _CPU_ISR_install_raw_handler
++ *
++ *  This routine installs a "raw" interrupt handler directly into the 
++ *  processor's vector table.
++ *
++ */
++ 
++void _CPU_ISR_install_raw_handler(
++  uint32_t    vector,
++  proc_ptr    new_handler,
++  proc_ptr   *old_handler
++);
++
++/*
++ *  _CPU_ISR_install_vector
++ *
++ *  This routine installs an interrupt vector.
++ *
++ *  NO_CPU Specific Information:
++ *
++ *  XXX document implementation including references if appropriate
++ */
++
++void _CPU_ISR_install_vector(
++  uint32_t    vector,
++  proc_ptr   new_handler,
++  proc_ptr   *old_handler
++);
++
++/*
++ *  _CPU_Install_interrupt_stack
++ *
++ *  This routine installs the hardware interrupt stack pointer.
++ *
++ *  NOTE:  It need only be provided if CPU_HAS_HARDWARE_INTERRUPT_STACK
++ *         is TRUE.
++ *
++ */
++
++void _CPU_Install_interrupt_stack( void );
++
++/*
++ *  _CPU_Thread_Idle_body
++ *
++ *  This routine is the CPU dependent IDLE thread body.
++ *
++ *  NOTE:  It need only be provided if CPU_PROVIDES_IDLE_THREAD_BODY
++ *         is TRUE.
++ *
++ */
++
++void _CPU_Thread_Idle_body( void );
++
++/*
++ *  _CPU_Context_switch
++ *
++ *  This routine switches from the run context to the heir context.
++ *
++ *  Or1k Specific Information:
++ *
++ *  Please see the comments in the .c file for a description of how
++ *  this function works. There are several things to be aware of.
++ */
++
++void _CPU_Context_switch(
++  Context_Control  *run,
++  Context_Control  *heir
++);
++
++/*
++ *  _CPU_Context_restore
++ *
++ *  This routine is generally used only to restart self in an
++ *  efficient manner.  It may simply be a label in _CPU_Context_switch.
++ *
++ *  NOTE: May be unnecessary to reload some registers.
++ *
++ */
++
++void _CPU_Context_restore(
++  Context_Control *new_context
++);
++
++/*
++ *  _CPU_Context_save_fp
++ *
++ *  This routine saves the floating point context passed to it.
++ *
++ */
++
++void _CPU_Context_save_fp(
++  void **fp_context_ptr
++);
++
++/*
++ *  _CPU_Context_restore_fp
++ *
++ *  This routine restores the floating point context passed to it.
++ *
++ */
++
++void _CPU_Context_restore_fp(
++  void **fp_context_ptr
++);
++
++/*  The following routine swaps the endian format of an unsigned int.
++ *  It must be static because it is referenced indirectly.
++ *
++ *  This version will work on any processor, but if there is a better
++ *  way for your CPU PLEASE use it.  The most common way to do this is to:
++ *
++ *     swap least significant two bytes with 16-bit rotate
++ *     swap upper and lower 16-bits
++ *     swap most significant two bytes with 16-bit rotate
++ *
++ *  Some CPUs have special instructions which swap a 32-bit quantity in
++ *  a single instruction (e.g. i486).  It is probably best to avoid
++ *  an "endian swapping control bit" in the CPU.  One good reason is
++ *  that interrupts would probably have to be disabled to insure that
++ *  an interrupt does not try to access the same "chunk" with the wrong
++ *  endian.  Another good reason is that on some CPUs, the endian bit
++ *  endianness for ALL fetches -- both code and data -- so the code
++ *  will be fetched incorrectly.
++ *
++ */
++ 
++static inline unsigned int CPU_swap_u32(
++  unsigned int value
++)
++{
++  uint32_t   byte1, byte2, byte3, byte4, swapped;
++ 
++  byte4 = (value >> 24) & 0xff;
++  byte3 = (value >> 16) & 0xff;
++  byte2 = (value >> 8)  & 0xff;
++  byte1 =  value        & 0xff;
++ 
++  swapped = (byte1 << 24) | (byte2 << 16) | (byte3 << 8) | byte4;
++  return( swapped );
++}
++
++#define CPU_swap_u16( value ) \
++  (((value&0xff) << 8) | ((value >> 8)&0xff))
++  
++typedef uint32_t CPU_Counter_ticks;
++
++CPU_Counter_ticks _CPU_Counter_read( void ); 
++
++CPU_Counter_ticks _CPU_Counter_difference(
++  CPU_Counter_ticks second, 
++  CPU_Counter_ticks first
++);
++
++#endif /* ASM */
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/cpukit/score/cpu/or1k/rtems/score/cpu_asm.h b/cpukit/score/cpu/or1k/rtems/score/cpu_asm.h
+new file mode 100644
+index 0000000..a5659f3
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/rtems/score/cpu_asm.h
+@@ -0,0 +1,74 @@
++/**
++ * @file
++ *
++ * @brief OR1K Assembly File
++ *
++ * Very loose template for an include file for the cpu_asm.? file
++ * if it is implemented as a ".S" file (preprocessed by cpp) instead
++ * of a ".s" file (preprocessed by gm4 or gasp).
++ */
++
++/*
++ *  COPYRIGHT (c) 1989-1999.
++ *  On-Line Applications Research Corporation (OAR).
++ *
++ *  The license and distribution terms for this file may be
++ *  found in the file LICENSE in this distribution or at
++ *  http://www.rtems.org/license/LICENSE.
++ *
++ */
++
++#ifndef _RTEMS_SCORE_CPU_ASM_H
++#define _RTEMS_SCORE_CPU_ASM_H
++
++/* pull in the generated offsets */
++
++/*
++#include <rtems/score/offsets.h>
++*/
++
++/*
++ * Hardware General Registers
++ */
++
++/* put something here */
++
++/*
++ * Hardware Floating Point Registers
++ */
++
++/* put something here */
++
++/*
++ * Hardware Control Registers
++ */
++
++/* put something here */
++
++/*
++ * Calling Convention
++ */
++
++/* put something here */
++
++/*
++ * Temporary registers
++ */
++
++/* put something here */
++
++/*
++ * Floating Point Registers - SW Conventions
++ */
++
++/* put something here */
++
++/*
++ * Temporary floating point registers
++ */
++
++/* put something here */
++
++#endif
++
++/* end of file */
+diff --git a/cpukit/score/cpu/or1k/rtems/score/or1k-utility.h b/cpukit/score/cpu/or1k/rtems/score/or1k-utility.h
+new file mode 100644
+index 0000000..2187c63
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/rtems/score/or1k-utility.h
+@@ -0,0 +1,334 @@
++/**
++ * @file
++ *
++ * @brief OR1K utility
++ */
++/*
++ * COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *
++ * The license and distribution terms for this file may be
++ * found in the file LICENSE in this distribution or at
++ * http://www.rtems.org/license/LICENSE.
++ */
++ 
++#ifndef _RTEMS_SCORE_OR1K_UTILITY_H
++#define _RTEMS_SCORE_OR1K_UTILITY_H
++ 
++/* SPR groups definitions */
++#define SPR_GRP_SHAMT 11
++#define SPR_GRP0_SYS_CTRL  (0  << SPR_GRP_SHAMT)
++#define SPR_GRP1_DMMU      (1  << SPR_GRP_SHAMT)
++#define SPR_GRP2_IMMU      (2  << SPR_GRP_SHAMT)
++#define SPR_GRP3_DC        (3  << SPR_GRP_SHAMT)
++#define SPR_GRP4_IC        (4  << SPR_GRP_SHAMT)
++#define SPR_GRP5_MAC       (5  << SPR_GRP_SHAMT)
++#define SPR_GRP6_DEBUG     (6  << SPR_GRP_SHAMT)
++#define SPR_GRP7_PERF_CTR  (7  << SPR_GRP_SHAMT)
++#define SPR_GRP8_PWR_MNG   (8  << SPR_GRP_SHAMT)
++#define SPR_GRP9_PIC       (9  << SPR_GRP_SHAMT)
++#define SPR_GPR10_TICK_TMR (10 << SPR_GRP_SHAMT)
++#define SPR_GPR11_FPU      (11 << SPR_GRP_SHAMT)
++
++/* SPR registers definitions */
++
++/* Group 0: System control registers */
++#define CPU_OR1K_SPR_VR       (SPR_GRP0_SYS_CTRL + 0)
++#define CPU_OR1K_SPR_UPR      (SPR_GRP0_SYS_CTRL + 1)
++#define CPU_OR1K_SPR_CPUCFGR  (SPR_GRP0_SYS_CTRL + 2)
++#define CPU_OR1K_SPR_DMMUCFGR (SPR_GRP0_SYS_CTRL + 3)
++#define CPU_OR1K_SPR_IMMUCFGR (SPR_GRP0_SYS_CTRL + 4)
++#define CPU_OR1K_SPR_DCCFGR   (SPR_GRP0_SYS_CTRL + 5)
++#define CPU_OR1K_SPR_ICCFGR   (SPR_GRP0_SYS_CTRL + 6)
++#define CPU_OR1K_SPR_DCFGR    (SPR_GRP0_SYS_CTRL + 7)
++#define CPU_OR1K_SPR_PCCFGR   (SPR_GRP0_SYS_CTRL + 8)
++#define CPU_OR1K_SPR_VR2      (SPR_GRP0_SYS_CTRL + 9)
++#define CPU_OR1K_SPR_AVR      (SPR_GRP0_SYS_CTRL + 10)
++#define CPU_OR1K_SPR_EVBAR    (SPR_GRP0_SYS_CTRL + 11)
++#define CPU_OR1K_SPR_AECR     (SPR_GRP0_SYS_CTRL + 12)
++#define CPU_OR1K_SPR_AESR     (SPR_GRP0_SYS_CTRL + 13)
++#define CPU_OR1K_SPR_NPC      (SPR_GRP0_SYS_CTRL + 16)
++#define CPU_OR1K_SPR_SR       (SPR_GRP0_SYS_CTRL + 17)
++#define CPU_OR1K_SPR_PPC      (SPR_GRP0_SYS_CTRL + 18)
++#define CPU_OR1K_SPR_FPCSR    (SPR_GRP0_SYS_CTRL + 20)
++#define CPU_OR1K_SPR_EPCR0    (SPR_GRP0_SYS_CTRL + 32)
++#define CPU_OR1K_SPR_EPCR1    (SPR_GRP0_SYS_CTRL + 33)
++#define CPU_OR1K_SPR_EPCR2    (SPR_GRP0_SYS_CTRL + 34)
++#define CPU_OR1K_SPR_EPCR3    (SPR_GRP0_SYS_CTRL + 35)
++#define CPU_OR1K_SPR_EPCR4    (SPR_GRP0_SYS_CTRL + 36)
++#define CPU_OR1K_SPR_EPCR5    (SPR_GRP0_SYS_CTRL + 37)
++#define CPU_OR1K_SPR_EPCR6    (SPR_GRP0_SYS_CTRL + 38)
++#define CPU_OR1K_SPR_EPCR7    (SPR_GRP0_SYS_CTRL + 39)
++#define CPU_OR1K_SPR_EPCR8    (SPR_GRP0_SYS_CTRL + 40)
++#define CPU_OR1K_SPR_EPCR9    (SPR_GRP0_SYS_CTRL + 41)
++#define CPU_OR1K_SPR_EPCR10   (SPR_GRP0_SYS_CTRL + 42)
++#define CPU_OR1K_SPR_EPCR11   (SPR_GRP0_SYS_CTRL + 43)
++#define CPU_OR1K_SPR_EPCR12   (SPR_GRP0_SYS_CTRL + 44)
++#define CPU_OR1K_SPR_EPCR13   (SPR_GRP0_SYS_CTRL + 45)
++#define CPU_OR1K_SPR_EPCR14   (SPR_GRP0_SYS_CTRL + 46)
++#define CPU_OR1K_SPR_EPCR15   (SPR_GRP0_SYS_CTRL + 47)
++#define CPU_OR1K_SPR_EEAR0    (SPR_GRP0_SYS_CTRL + 48) 
++#define CPU_OR1K_SPR_EEAR1    (SPR_GRP0_SYS_CTRL + 49)
++#define CPU_OR1K_SPR_EEAR2    (SPR_GRP0_SYS_CTRL + 50)
++#define CPU_OR1K_SPR_EEAR3    (SPR_GRP0_SYS_CTRL + 51)
++#define CPU_OR1K_SPR_EEAR4    (SPR_GRP0_SYS_CTRL + 52)
++#define CPU_OR1K_SPR_EEAR5    (SPR_GRP0_SYS_CTRL + 53)
++#define CPU_OR1K_SPR_EEAR6    (SPR_GRP0_SYS_CTRL + 54)
++#define CPU_OR1K_SPR_EEAR7    (SPR_GRP0_SYS_CTRL + 55)
++#define CPU_OR1K_SPR_EEAR8    (SPR_GRP0_SYS_CTRL + 56)
++#define CPU_OR1K_SPR_EEAR9    (SPR_GRP0_SYS_CTRL + 57)
++#define CPU_OR1K_SPR_EEAR10   (SPR_GRP0_SYS_CTRL + 58)
++#define CPU_OR1K_SPR_EEAR11   (SPR_GRP0_SYS_CTRL + 59)
++#define CPU_OR1K_SPR_EEAR12   (SPR_GRP0_SYS_CTRL + 60)
++#define CPU_OR1K_SPR_EEAR13   (SPR_GRP0_SYS_CTRL + 61)
++#define CPU_OR1K_SPR_EEAR14   (SPR_GRP0_SYS_CTRL + 62)
++#define CPU_OR1K_SPR_EEAR15   (SPR_GRP0_SYS_CTRL + 63)
++#define CPU_OR1K_SPR_ESR0     (SPR_GRP0_SYS_CTRL + 64)
++#define CPU_OR1K_SPR_ESR1     (SPR_GRP0_SYS_CTRL + 65)
++#define CPU_OR1K_SPR_ESR2     (SPR_GRP0_SYS_CTRL + 66)
++#define CPU_OR1K_SPR_ESR3     (SPR_GRP0_SYS_CTRL + 67)
++#define CPU_OR1K_SPR_ESR4     (SPR_GRP0_SYS_CTRL + 68)
++#define CPU_OR1K_SPR_ESR5     (SPR_GRP0_SYS_CTRL + 69)
++#define CPU_OR1K_SPR_ESR6     (SPR_GRP0_SYS_CTRL + 70)
++#define CPU_OR1K_SPR_ESR7     (SPR_GRP0_SYS_CTRL + 71)
++#define CPU_OR1K_SPR_ESR8     (SPR_GRP0_SYS_CTRL + 72)
++#define CPU_OR1K_SPR_ESR9     (SPR_GRP0_SYS_CTRL + 73)
++#define CPU_OR1K_SPR_ESR10    (SPR_GRP0_SYS_CTRL + 74)
++#define CPU_OR1K_SPR_ESR11    (SPR_GRP0_SYS_CTRL + 75)
++#define CPU_OR1K_SPR_ESR12    (SPR_GRP0_SYS_CTRL + 76)
++#define CPU_OR1K_SPR_ESR13    (SPR_GRP0_SYS_CTRL + 77)
++#define CPU_OR1K_SPR_ESR14    (SPR_GRP0_SYS_CTRL + 78)
++#define CPU_OR1K_SPR_ESR15    (SPR_GRP0_SYS_CTRL + 79)
++
++/* Shadow registers base */
++#define CPU_OR1K_SPR_GPR32    (SPR_GRP0_SYS_CTRL + 1024)
++
++/* Group1: Data MMU registers */
++#define CPU_OR1K_SPR_DMMUCR   (SPR_GRP1_DMMU + 0)
++#define CPU_OR1K_SPR_DMMUPR   (SPR_GRP1_DMMU + 1)
++#define CPU_OR1K_SPR_DTLBEIR  (SPR_GRP1_DMMU + 2)
++#define CPU_OR1K_SPR_DATBMR0  (SPR_GRP1_DMMU + 4)
++#define CPU_OR1K_SPR_DATBMR1  (SPR_GRP1_DMMU + 5)
++#define CPU_OR1K_SPR_DATBMR2  (SPR_GRP1_DMMU + 6)
++#define CPU_OR1K_SPR_DATBMR3  (SPR_GRP1_DMMU + 7)
++#define CPU_OR1K_SPR_DATBTR0  (SPR_GRP1_DMMU + 8)
++#define CPU_OR1K_SPR_DATBTR1  (SPR_GRP1_DMMU + 9)
++#define CPU_OR1K_SPR_DATBTR2  (SPR_GRP1_DMMU + 10)
++#define CPU_OR1K_SPR_DATBTR3  (SPR_GRP1_DMMU + 11)
++
++/* Group2: Instruction MMU registers */
++#define CPU_OR1K_SPR_IMMUCR   (SPR_GRP2_IMMU + 0)
++#define CPU_OR1K_SPR_IMMUPR   (SPR_GRP2_IMMU + 1)
++#define CPU_OR1K_SPR_ITLBEIR  (SPR_GRP2_IMMU + 2)
++#define CPU_OR1K_SPR_IATBMR0  (SPR_GRP2_IMMU + 4)
++#define CPU_OR1K_SPR_IATBMR1  (SPR_GRP2_IMMU + 5)
++#define CPU_OR1K_SPR_IATBMR2  (SPR_GRP2_IMMU + 6)
++#define CPU_OR1K_SPR_IATBMR3  (SPR_GRP2_IMMU + 7)
++#define CPU_OR1K_SPR_IATBTR0  (SPR_GRP2_IMMU + 8)
++#define CPU_OR1K_SPR_IATBTR1  (SPR_GRP2_IMMU + 9)
++#define CPU_OR1K_SPR_IATBTR2  (SPR_GRP2_IMMU + 10)
++#define CPU_OR1K_SPR_IATBTR3  (SPR_GRP2_IMMU + 11)
++
++/* Group3: Data Cache registers */
++#define CPU_OR1K_SPR_DCCR   (SPR_GRP3_DC + 0)
++#define CPU_OR1K_SPR_DCBPR  (SPR_GRP3_DC + 1)
++#define CPU_OR1K_SPR_DCBFR  (SPR_GRP3_DC + 2)
++#define CPU_OR1K_SPR_DCBIR  (SPR_GRP3_DC + 3)
++#define CPU_OR1K_SPR_DCBWR  (SPR_GRP3_DC + 4)
++#define CPU_OR1K_SPR_DCBLR  (SPR_GRP3_DC + 5)
++
++/* Group4: Instruction Cache registers */
++#define CPU_OR1K_SPR_ICCR   (SPR_GRP4_IC + 0)
++#define CPU_OR1K_SPR_ICBPR  (SPR_GRP4_IC + 1)
++#define CPU_OR1K_SPR_ICBIR  (SPR_GRP4_IC + 2)
++#define CPU_OR1K_SPR_ICBLR  (SPR_GRP4_IC + 3)
++
++/* Group5: MAC registers */
++#define CPU_OR1K_SPR_MACLO  (SPR_GRP5_MAC + 1)
++#define CPU_OR1K_SPR_MACHI  (SPR_GRP5_MAC + 2)
++
++/* Group6: Debug registers */
++#define CPU_OR1K_SPR_DVR0   (SPR_GRP6_DEBUG + 0)
++#define CPU_OR1K_SPR_DVR1   (SPR_GRP6_DEBUG + 1)
++#define CPU_OR1K_SPR_DVR2   (SPR_GRP6_DEBUG + 2)
++#define CPU_OR1K_SPR_DVR3   (SPR_GRP6_DEBUG + 3)
++#define CPU_OR1K_SPR_DVR4   (SPR_GRP6_DEBUG + 4)
++#define CPU_OR1K_SPR_DVR5   (SPR_GRP6_DEBUG + 5)
++#define CPU_OR1K_SPR_DVR6   (SPR_GRP6_DEBUG + 6)
++#define CPU_OR1K_SPR_DVR7   (SPR_GRP6_DEBUG + 7)
++#define CPU_OR1K_SPR_DCR0   (SPR_GRP6_DEBUG + 8)
++#define CPU_OR1K_SPR_DCR1   (SPR_GRP6_DEBUG + 9)
++#define CPU_OR1K_SPR_DCR2   (SPR_GRP6_DEBUG + 10)
++#define CPU_OR1K_SPR_DCR3   (SPR_GRP6_DEBUG + 11)
++#define CPU_OR1K_SPR_DCR4   (SPR_GRP6_DEBUG + 12)
++#define CPU_OR1K_SPR_DCR5   (SPR_GRP6_DEBUG + 13)
++#define CPU_OR1K_SPR_DCR6   (SPR_GRP6_DEBUG + 14)
++#define CPU_OR1K_SPR_DCR7   (SPR_GRP6_DEBUG + 15)
++#define CPU_OR1K_SPR_DMR1   (SPR_GRP6_DEBUG + 16)
++#define CPU_OR1K_SPR_DMR2   (SPR_GRP6_DEBUG + 17)
++#define CPU_OR1K_SPR_DCWR0  (SPR_GRP6_DEBUG + 18)
++#define CPU_OR1K_SPR_DCWR1  (SPR_GRP6_DEBUG + 19)
++#define CPU_OR1K_SPR_DSR    (SPR_GRP6_DEBUG + 20)
++#define CPU_OR1K_SPR_DRR    (SPR_GRP6_DEBUG + 21)
++
++/* Group7: Performance counters registers */
++#define CPU_OR1K_SPR_PCCR0  (SPR_GRP7_PERF_CTR + 0)
++#define CPU_OR1K_SPR_PCCR1  (SPR_GRP7_PERF_CTR + 1)
++#define CPU_OR1K_SPR_PCCR2  (SPR_GRP7_PERF_CTR + 2)
++#define CPU_OR1K_SPR_PCCR3  (SPR_GRP7_PERF_CTR + 3)
++#define CPU_OR1K_SPR_PCCR4  (SPR_GRP7_PERF_CTR + 4)
++#define CPU_OR1K_SPR_PCCR5  (SPR_GRP7_PERF_CTR + 5)
++#define CPU_OR1K_SPR_PCCR6  (SPR_GRP7_PERF_CTR + 6)
++#define CPU_OR1K_SPR_PCCR7  (SPR_GRP7_PERF_CTR + 7)
++#define CPU_OR1K_SPR_PCMR0  (SPR_GRP7_PERF_CTR + 8)
++#define CPU_OR1K_SPR_PCMR1  (SPR_GRP7_PERF_CTR + 9)
++#define CPU_OR1K_SPR_PCMR2  (SPR_GRP7_PERF_CTR + 10)
++#define CPU_OR1K_SPR_PCMR3  (SPR_GRP7_PERF_CTR + 11)
++#define CPU_OR1K_SPR_PCMR4  (SPR_GRP7_PERF_CTR + 12)
++#define CPU_OR1K_SPR_PCMR5  (SPR_GRP7_PERF_CTR + 13)
++#define CPU_OR1K_SPR_PCMR6  (SPR_GRP7_PERF_CTR + 14)
++#define CPU_OR1K_SPR_PCMR7  (SPR_GRP7_PERF_CTR + 15)
++
++/* Group8: Power management register */
++#define CPU_OR1K_SPR_PMR    (SPR_GRP8_PWR_MNG + 0)
++
++/* Group9: PIC registers */
++#define CPU_OR1K_SPR_PICMR  (SPR_GRP9_PIC + 0)
++#define CPU_OR1K_SPR_PICSR  (SPR_GRP9_PIC + 2)
++
++/* Group10: Tick Timer registers */
++#define CPU_OR1K_SPR_TTMR   (SPR_GPR10_TICK_TMR + 0)
++#define CPU_OR1K_SPR_TTCR   (SPR_GPR10_TICK_TMR + 1)
++
++ /* Shift amount macros for bits position in Supervision Register */ 
++#define CPU_OR1K_SPR_SR_SHAMT_SM     (0)
++#define CPU_OR1K_SPR_SR_SHAMT_TEE    (1) 
++#define CPU_OR1K_SPR_SR_SHAMT_IEE    (2) 
++#define CPU_OR1K_SPR_SR_SHAMT_DCE    (3)
++#define CPU_OR1K_SPR_SR_SHAMT_ICE    (4)
++#define CPU_OR1K_SPR_SR_SHAMT_DME    (5)
++#define CPU_OR1K_SPR_SR_SHAMT_IME    (6)
++#define CPU_OR1K_SPR_SR_SHAMT_LEE    (7)
++#define CPU_OR1K_SPR_SR_SHAMT_CE     (8)
++#define CPU_OR1K_SPR_SR_SHAMT_F      (9)
++#define CPU_OR1K_SPR_SR_SHAMT_CY     (10)
++#define CPU_OR1K_SPR_SR_SHAMT_OV     (11)
++#define CPU_OR1K_SPR_SR_SHAMT_OVE    (12)
++#define CPU_OR1K_SPR_SR_SHAMT_DSX    (13)
++#define CPU_OR1K_SPR_SR_SHAMT_EPH    (14)
++#define CPU_OR1K_SPR_SR_SHAMT_FO     (15)
++#define CPU_OR1K_SPR_SR_SHAMT_SUMRA  (16)
++#define CPU_OR1K_SPR_SR_SHAMT_CID    (28)
++
++/* Supervision Mode Register. @see OpenRISC architecture manual*/
++
++ /* Supervisor Mode */ 
++#define CPU_OR1K_SPR_SR_SM    (1 << CPU_OR1K_SPR_SR_SHAMT_SM)
++/* Tick Timer Exception Enabled */
++#define CPU_OR1K_SPR_SR_TEE   (1 << CPU_OR1K_SPR_SR_SHAMT_TEE)
++/* Interrupt Exception Enabled */
++#define CPU_OR1K_SPR_SR_IEE   (1 << CPU_OR1K_SPR_SR_SHAMT_IEE)
++/* Data Cache Enable */
++#define CPU_OR1K_SPR_SR_DCE   (1 << CPU_OR1K_SPR_SR_SHAMT_DCE)
++/* Instruction Cache Enable */      
++#define CPU_OR1K_SPR_SR_ICE   (1 << CPU_OR1K_SPR_SR_SHAMT_ICE)
++/* Data MMU Enable */
++#define CPU_OR1K_SPR_SR_DME   (1 << CPU_OR1K_SPR_SR_SHAMT_DME)
++/* Instruction MMU Enable */
++#define CPU_OR1K_SPR_SR_IME   (1 << CPU_OR1K_SPR_SR_SHAMT_IME)
++/* Little Endian Enable */
++#define CPU_OR1K_SPR_SR_LEE   (1 << CPU_OR1K_SPR_SR_SHAMT_LEE)
++/* CID Enable */
++#define CPU_OR1K_SPR_SR_CE    (1 << CPU_OR1K_SPR_SR_SHAMT_CE)
++/* Conditional branch flag */
++#define CPU_OR1K_SPR_SR_F     (1 << CPU_OR1K_SPR_SR_SHAMT_F)
++/* Carry flag */
++#define CPU_OR1K_SPR_SR_CY    (1 << CPU_OR1K_SPR_SR_SHAMT_CY)
++/* Overflow flag */
++#define CPU_OR1K_SPR_SR_OV    (1 << CPU_OR1K_SPR_SR_SHAMT_OV)
++/* Overflow flag Exception */
++#define CPU_OR1K_SPR_SR_OVE   (1 << CPU_OR1K_SPR_SR_SHAMT_OVE)
++/* Delay Slot Exception */
++#define CPU_OR1K_SPR_SR_DSX   (1 << CPU_OR1K_SPR_SR_SHAMT_DSX)
++ /* Exception Prefix High */
++#define CPU_OR1K_SPR_SR_EPH   (1 << CPU_OR1K_SPR_SR_SHAMT_EPH)
++/* Fixed One */
++#define CPU_OR1K_SPR_SR_FO    (1 << CPU_OR1K_SPR_SR_SHAMT_FO)
++/* SPRs User Mode Read Access */
++#define CPU_OR1K_SPR_SR_SUMRA (1 << CPU_OR1K_SPR_SR_SHAMT_SUMRA)
++/*Context ID (Fast Context Switching) */
++#define CPU_OR1K_SPR_SR_CID   (F << CPU_OR1K_SPR_SR_SHAMT_CID)
++
++/* Used to disable interrupts */
++#define CPU_OR1K_ISR_STATUS_MASK_I_DIS  0xFFFFFFFB 
++
++#ifndef ASM
++
++#include <stddef.h>
++#include <stdint.h>
++#include <stdbool.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif /* __cplusplus */
++
++/**
++ * @brief Supervision Mode registers definitions.
++ *
++ * @see OpenRISC architecture manual - revision 0.
++ */
++typedef enum {
++  OR1K_EXCEPTION_RESET = 1, 
++  OR1K_EXCEPTION_BUS_ERR = 2, 
++  OR1K_EXCEPTION_D_PF = 3, /* Data Page Fault */
++  OR1K_EXCEPTION_I_PF = 4, /* Instruction Page Fault */
++  OR1K_EXCEPTION_TICK_TIMER = 5, 
++  OR1K_EXCEPTION_ALIGNMENT = 6,
++  OR1K_EXCEPTION_I_UNDEF= 7, /* Undefiend instruction */
++  OR1K_EXCEPTION_IRQ = 8, /* External interrupt */
++  OR1K_EXCPETION_D_TLB = 9, /* Data TLB miss */ 
++  OR1K_EXCPETION_I_TLB = 10, /* Instruction TLB miss */
++  OR1K_EXCPETION_RANGE = 11, /* Range exception */
++  OR1K_EXCPETION_SYS_CALL = 12,
++  OR1K_EXCPETION_FP = 13, /* Floating point exception */
++  OR1K_EXCPETION_TRAP = 14, /* Caused by l.trap instruction or by debug unit */
++  OR1K_EXCPETION_RESERVED1 = 15,
++  OR1K_EXCPETION_RESERVED2 = 16,
++  OR1K_EXCPETION_RESERVED3 = 17,
++  MAX_EXCEPTIONS = 17,
++  OR1K_EXCEPTION_MAKE_ENUM_32_BIT = 0xffffffff
++} OR1K_symbolic_exception_name;
++
++static inline uint32_t _OR1K_mfspr(uint32_t reg)
++{
++   uint32_t spr_value;
++  
++   asm volatile (
++     "l.mfspr  %1, r0, 0"
++     : "=r" (spr_value) : "r" (reg));
++   
++   return spr_value;
++}
++
++static inline void _OR1K_mtspr(uint32_t reg, uint32_t value)
++{ 
++   asm volatile (
++     "l.mtspr  %1, %0, 0;"
++     :: "r" (value), "r" (reg)
++   );
++}
++
++static inline void _OR1K_Sync_mem( void )
++{
++  asm volatile("l.msync");
++}
++
++static inline void _OR1K_Sync_pipeline( void )
++{
++  asm volatile("l.psync");
++}
++
++#else /* ASM */
++
++#endif /* ASM */
++
++#endif /* _RTEMS_SCORE_OR1K_UTILITY_H */
+diff --git a/cpukit/score/cpu/or1k/rtems/score/or1k.h b/cpukit/score/cpu/or1k/rtems/score/or1k.h
+new file mode 100644
+index 0000000..b1377a1
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/rtems/score/or1k.h
+@@ -0,0 +1,49 @@
++/**
++ * @file rtems/score/or1k.h
++ */
++
++/*
++ *  This file contains information pertaining to the OR1K processor.
++ *
++ *  COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *
++ *  Based on code with the following copyright...
++ *  COPYRIGHT (c) 1989-1999, 2010.
++ *  On-Line Applications Research Corporation (OAR).
++ *
++ *  The license and distribution terms for this file may be
++ *  found in the file LICENSE in this distribution or at
++ *  http://www.rtems.org/license/LICENSE.
++ */
++ 
++#ifndef _RTEMS_SCORE_OR1K_H
++#define _RTEMS_SCORE_OR1K_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/*
++ *  This file contains the information required to build
++ *  RTEMS for a particular member of the OR1K family.
++ *  It does this by setting variables to indicate which
++ *  implementation dependent features are present in a particular
++ *  member of the family.
++ *
++ *  This is a good place to list all the known CPU models
++ *  that this port supports and which RTEMS CPU model they correspond
++ *  to.
++ */
++ 
++ /*
++ *  Define the name of the CPU family and specific model.
++ */
++
++#define CPU_NAME "OR1K"
++#define CPU_MODEL_NAME "OR1200"
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* _RTEMS_SCORE_OR1K_H */
+diff --git a/cpukit/score/cpu/or1k/rtems/score/types.h b/cpukit/score/cpu/or1k/rtems/score/types.h
+new file mode 100644
+index 0000000..b8ed7c9
+--- /dev/null
++++ b/cpukit/score/cpu/or1k/rtems/score/types.h
+@@ -0,0 +1,51 @@
++/**
++ * @file
++ *
++ * @brief OR1K Architecture Types API
++ */
++
++/*
++ *  This include file contains type definitions pertaining to the
++ *  arm processor family.
++ *
++ *  COPYRIGHT (c) 2014 Hesham ALMatary <heshamelmatary@gmail.com>
++ *
++ *  The license and distribution terms for this file may be
++ *  found in the file LICENSE in this distribution or at
++ *  http://www.rtems.org/license/LICENSE.
++ *
++ */
++ 
++ #ifndef _RTEMS_SCORE_TYPES_H
++#define _RTEMS_SCORE_TYPES_H
++
++#include <rtems/score/basedefs.h>
++
++#ifndef ASM
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/**
++ * @addtogroup ScoreCPU
++ */
++/**@{**/
++
++/*
++ *  This section defines the basic types for this processor.
++ */
++
++typedef uint16_t Priority_bit_map_Word;
++typedef void or1k_isr;
++typedef void ( *or1k_isr_entry )( void );
++
++/** @} */
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif  /* !ASM */
++
++#endif
+-- 
+1.9.3
+

@@ -1,0 +1,27 @@
+From 8de34e9482d108ebc082b6d4351258d2988144f6 Mon Sep 17 00:00:00 2001
+From: Hesham ALMatary <heshamelmatary@gmail.com>
+Date: Sat, 16 Aug 2014 14:51:36 +0200
+Subject: [PATCH 3/3] Make or1k targets use printk for test outputs
+
+---
+ testsuites/support/include/buffer_test_io.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/testsuites/support/include/buffer_test_io.h b/testsuites/support/include/buffer_test_io.h
+index 3cadc48..fac09aa 100644
+--- a/testsuites/support/include/buffer_test_io.h
++++ b/testsuites/support/include/buffer_test_io.h
+@@ -21,6 +21,10 @@ extern "C" {
+ #define TESTS_USE_PRINTK
+ #endif
+ 
++#if defined(__OR1K__)
++#define TESTS_USE_PRINTK
++#endif
++
+ /*
+  *  USE PRINTK TO MINIMIZE SIZE
+  */
+-- 
+1.9.3
+

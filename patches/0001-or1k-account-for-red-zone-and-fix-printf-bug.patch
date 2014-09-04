@@ -1,0 +1,177 @@
+From 402b645a16219a6481a4061b5530cf5a1dd6bf2d Mon Sep 17 00:00:00 2001
+From: Hesham ALMatary <heshamelmatary@gmail.com>
+Date: Thu, 4 Sep 2014 22:55:11 +0200
+Subject: [PATCH] or1k: account for red-zone and fix printf bug.
+
+This patch accounts for red-zone in many places:
+1- Upon entry of an exception.
+2- When a new thread context is created.
+
+Also, checking whether dispatch is needed or not is moved just after
+returning from C handler.
+---
+ c/src/lib/libbsp/or1k/or1ksim/start/start.S        |  2 +-
+ cpukit/score/cpu/or1k/or1k-context-initialize.c    |  2 +-
+ cpukit/score/cpu/or1k/or1k-exception-handler-low.S | 63 ++++++++++++++--------
+ 3 files changed, 43 insertions(+), 24 deletions(-)
+
+diff --git a/c/src/lib/libbsp/or1k/or1ksim/start/start.S b/c/src/lib/libbsp/or1k/or1ksim/start/start.S
+index 6942b52..4d911d4 100644
+--- a/c/src/lib/libbsp/or1k/or1ksim/start/start.S
++++ b/c/src/lib/libbsp/or1k/or1ksim/start/start.S
+@@ -16,7 +16,7 @@
+  */
+ #define EXCEPTION_SETUP(vector) \
+   l.nop   ;\
+-  l.addi  r1, r1, -4 ;\
++  l.addi  r1, r1, -200 ;\
+   l.sw    0(r1), r3; \
+   l.addi  r3, r0, vector; \
+   l.j     _ISR_Handler; \
+diff --git a/cpukit/score/cpu/or1k/or1k-context-initialize.c b/cpukit/score/cpu/or1k/or1k-context-initialize.c
+index 7ac2875..2be50ba 100644
+--- a/cpukit/score/cpu/or1k/or1k-context-initialize.c
++++ b/cpukit/score/cpu/or1k/or1k-context-initialize.c
+@@ -29,7 +29,7 @@ void _CPU_Context_Initialize(
+   void *tls_area
+ )
+ {
+-  uint32_t stack = (uint32_t) stack_area_begin;
++  uint32_t stack = ((uint32_t) stack_area_begin) - 200;
+   uint32_t sr;
+ 
+   sr = _OR1K_mfspr(CPU_OR1K_SPR_SR);
+diff --git a/cpukit/score/cpu/or1k/or1k-exception-handler-low.S b/cpukit/score/cpu/or1k/or1k-exception-handler-low.S
+index 7108ff6..1863a3c 100644
+--- a/cpukit/score/cpu/or1k/or1k-exception-handler-low.S
++++ b/cpukit/score/cpu/or1k/or1k-exception-handler-low.S
+@@ -33,10 +33,20 @@ PUBLIC(_ISR_Handler)
+   l.addi  r1, r1, -140
+ 
+   l.sw  8(r1),r2
++  
++  
+   /* r3 is saved by BSP exception handler */
+   l.sw  16(r1),r4
+   l.sw  20(r1),r5
+   l.sw  24(r1),r6
++  
++  /* Disable interrupts */
++  l.movhi r4, hi( ~ (CPU_OR1K_SPR_SR_IEE | CPU_OR1K_SPR_SR_TEE))
++  l.ori   r4, r4, lo ( ~ (CPU_OR1K_SPR_SR_IEE | CPU_OR1K_SPR_SR_TEE))
++  l.mfspr r5, r0, CPU_OR1K_SPR_SR
++  l.and  r5, r5, r4
++  l.mtspr r0, r5, CPU_OR1K_SPR_SR
++  
+   l.sw  28(r1),r7
+   l.sw  32(r1),r8
+   l.sw  36(r1),r9
+@@ -93,7 +103,8 @@ PUBLIC(_ISR_Handler)
+   l.sw    0(r8), r7
+ 
+   /* Save interrupted task stack pointer */
+-  l.addi r4, r1, 144
++  l.addi r4, r1, 140
++  l.addi r4, r4, 200
+   l.sw   4(r1), r4
+ 
+   /* Save interrupted task r3 (first arg) value */
+@@ -118,7 +129,7 @@ PUBLIC(_ISR_Handler)
+   /* Do not switch stacks if we are in a nested interrupt. At
+    * this point r5 should be holding ISR_NEST_LEVEL value.
+    */
+-  l.sfgtui r5, 2
++  l.sfgtui r5, 1
+   l.bf jump_to_c_handler
+   l.nop
+ 
+@@ -126,6 +137,7 @@ PUBLIC(_ISR_Handler)
+   l.movhi r1, hi(INTERRUPT_STACK_HIGH)
+   l.ori   r1, r1, lo(INTERRUPT_STACK_HIGH)
+   l.lwz   r1, 0(r1)
++ // l.addi  r1, r1, 200
+ 
+ jump_to_c_handler:
+   l.jalr r13
+@@ -134,6 +146,21 @@ jump_to_c_handler:
+   /* Switch back to the interrupted task stack */
+   l.add r1, r14, r0
+ 
++  /* Decrement nesting level */
++  l.movhi r6, hi(ISR_NEST_LEVEL)
++  l.ori   r6, r6, lo(ISR_NEST_LEVEL)
++
++  /* Enable multitasking */
++  l.movhi r8, hi(THREAD_DISPATCH_DISABLE_LEVEL)
++  l.ori   r8, r8, lo(THREAD_DISPATCH_DISABLE_LEVEL)
++
++  l.lwz   r5, 0(r6)
++  l.lwz   r7, 0(r8)
++  l.addi  r5, r5, -1
++  l.addi  r7, r7, -1
++  l.sw    0(r6), r5
++  l.sw    0(r8), r7
++  
+   /* Check if dispatch needed */
+   l.movhi r31, hi(DISPATCH_NEEDED)
+   l.ori   r31, r31, lo(DISPATCH_NEEDED)
+@@ -146,7 +173,7 @@ jump_to_c_handler:
+   l.ori   r13, r13, lo(_Thread_Dispatch)
+   l.jalr  r13
+   l.nop
+-
++ 
+  SYM(exception_frame_restore):
+ 
+   /* Exception level related registers */
+@@ -163,25 +190,9 @@ jump_to_c_handler:
+   l.lwz  r13,  136(r1)
+   l.mtspr r0, r13, CPU_OR1K_SPR_ESR0
+ 
+-  /* Increment nesting level */
+-  l.movhi r6, hi(ISR_NEST_LEVEL)
+-  l.ori   r6, r6, lo(ISR_NEST_LEVEL)
+-
+-  /* Disable multitasking */
+-  l.movhi r8, hi(THREAD_DISPATCH_DISABLE_LEVEL)
+-  l.ori   r8, r8, lo(THREAD_DISPATCH_DISABLE_LEVEL)
+-
+-  l.lwz   r5, 0(r6)
+-  l.lwz   r7, 0(r8)
+-  l.addi  r5, r5, -1
+-  l.addi  r7, r7, -1
+-  l.sw    0(r6), r5
+-  l.sw    0(r8), r7
+-
+   l.lwz  r2,  8(r1)
+   l.lwz  r3,  12(r1)
+-  l.lwz  r4,  16(r1)
+-  l.lwz  r5,  20(r1)
++ 
+   l.lwz  r6,  24(r1)
+   l.lwz  r7,  28(r1)
+   l.lwz  r8,  32(r1)
+@@ -208,10 +219,18 @@ jump_to_c_handler:
+   l.lwz  r29, 116(r1)
+   l.lwz  r30, 120(r1)
+   l.lwz  r31, 124(r1)
+-
++ 
++  /* Enable interrupts */
++  l.mfspr r5, r0, CPU_OR1K_SPR_SR
++  l.ori   r5, r5, lo((CPU_OR1K_SPR_SR_IEE | CPU_OR1K_SPR_SR_TEE))
++  l.mtspr r0, r5, CPU_OR1K_SPR_SR
++  
++  l.lwz  r4,  16(r1)
++  l.lwz  r5,  20(r1)
++  
+   l.addi r1, r1, 140
+ 
+-  l.addi r1, r1, 4
++  l.addi r1, r1, 200
+ 
+   l.rfe
+   l.nop
+-- 
+1.9.3
+

@@ -9016,7 +9016,6 @@ diff -Naur -x '*.swp' -x '*.out' -x '*.diff' -x '*java*' gcc-4.8.3/gcc/config/or
 +    {						\
 +	builtin_define ("__rtems__");		\
 +	builtin_assert ("system=rtems");	\
-+    builtin_define ("__USE_INIT_FINI__"); \
 +    }						\
 +  while (0)
 diff -Naur -x '*.swp' -x '*.out' -x '*.diff' -x '*java*' gcc-4.8.3/gcc/config/or1k/t-linux gcc-4.8.3-or1k-rtems/gcc/config/or1k/t-linux

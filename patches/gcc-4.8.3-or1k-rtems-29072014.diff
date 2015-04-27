@@ -9,7 +9,7 @@ diff -Naur -x '*.swp' -x '*.out' -x '*.diff' -x '*java*' gcc-4.8.3/config/picfla
 +  $1=-fPIC
 +  ;;
      rs6000-ibm-aix* | powerpc-ibm-aix*)
- 	# All AIX code is PIC.
+ 	# All AIX code is PICo
  	;;
 diff -Naur -x '*.swp' -x '*.out' -x '*.diff' -x '*java*' gcc-4.8.3/config.guess gcc-4.8.3-or1k-rtems/config.guess
 --- gcc-4.8.3/config.guess	2014-04-04 15:48:08.000000000 +0200
@@ -6080,6 +6080,10 @@ diff -Naur -x '*.swp' -x '*.out' -x '*.diff' -x '*java*' gcc-4.8.3/gcc/config/or
 +      }                                                 \
 +    }                                                   \
 +  while (0)
++
++#define CTORS_SECTION_ASM_OP "\t.section\t.ctors,\"aw\""
++#define DTORS_SECTION_ASM_OP "\t.section\t.dtors,\"aw\""
++#define INIT_SECTION_ASM_OP "\t.section\t.init,\"ax\""
 +
 +#undef CPP_SPEC
 +#define CPP_SPEC \

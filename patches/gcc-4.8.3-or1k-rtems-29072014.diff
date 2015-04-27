@@ -6081,8 +6081,7 @@ diff -Naur -x '*.swp' -x '*.out' -x '*.diff' -x '*java*' gcc-4.8.3/gcc/config/or
 +    }                                                   \
 +  while (0)
 +
-+#define CTORS_SECTION_ASM_OP "\t.section\t.ctors,\"aw\""
-+#define DTORS_SECTION_ASM_OP "\t.section\t.dtors,\"aw\""
++#undef INIT_SECTION_ASM_OP
 +#define INIT_SECTION_ASM_OP "\t.section\t.init,\"ax\""
 +
 +#undef CPP_SPEC
